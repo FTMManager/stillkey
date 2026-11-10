@@ -28,25 +28,34 @@ fn a_memory_map_one_entry_longer_than_the_block_is_refused_by_its_bound() {
     assert_eq!(validate(&block, BLOCK_PHYS).unwrap_err(), Reject::MemoryMap);
 }
 
-/// A one-page block whose reserved table is its last 24 bytes and holds the
-/// block's own entry; `count` is what the header claims.
+/// A one-page block whose reserved table is its last 72 bytes and holds the
+/// three entries a handoff cannot do without: the block, the kernel image
+/// and the boot stack. `count` is what the header claims.
 fn reserved_table_at_the_end(count: u64) -> Vec<u8> {
-    let at = PAGE - ReservedRange::SIZE;
+    let at = PAGE - 3 * ReservedRange::SIZE;
     let mut block =
         build(&good(), |h| h.reserved = Table { phys: BLOCK_PHYS + at as u64, count });
-    block[at..].copy_from_slice(&range(BLOCK_PHYS, 1, PURPOSE_BOOT_INFO).encode());
+    let entries = [
+        range(BLOCK_PHYS, 1, PURPOSE_BOOT_INFO),
+        range(0x0110_0000, 16, PURPOSE_KERNEL_IMAGE),
+        range(0x0120_0000, 16, PURPOSE_BOOT_STACK),
+    ];
+    for (i, entry) in entries.iter().enumerate() {
+        let from = at + i * ReservedRange::SIZE;
+        block[from..from + ReservedRange::SIZE].copy_from_slice(&entry.encode());
+    }
     block
 }
 
 #[test]
 fn a_reserved_table_one_entry_longer_than_the_block_is_refused_by_its_bound() {
-    let honest = reserved_table_at_the_end(1);
-    let ok = validate(&honest, BLOCK_PHYS).expect("one entry fits");
-    assert_eq!(ok.reserved().count(), 1);
+    let honest = reserved_table_at_the_end(3);
+    let ok = validate(&honest, BLOCK_PHYS).expect("three entries fit");
+    assert_eq!(ok.reserved().count(), 3);
 
-    // Two entries: far below the limit of 32, and the one inside the block is
-    // valid. The second would lie wholly past the block.
-    let block = reserved_table_at_the_end(2);
+    // Four entries: far below the limit of 32, and those inside the block
+    // are valid. The fourth would lie wholly past the block.
+    let block = reserved_table_at_the_end(4);
     assert_eq!(validate(&block, BLOCK_PHYS).unwrap_err(), Reject::Reserved);
 }
 

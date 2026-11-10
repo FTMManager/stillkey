@@ -105,6 +105,19 @@ pub fn build(spec: &Spec, edit: impl FnOnce(&mut BootInfo)) -> Vec<u8> {
         },
         exit_attempts: 1,
         uefi_descriptor_size: 48,
+        // The records of the two ranges `good()` reserves for them.
+        kernel: KernelImage {
+            phys_base: 0x0110_0000,
+            virt_base: KERNEL_WINDOW,
+            size: 16 * 4096,
+            entry: KERNEL_WINDOW + 0x1000,
+            sha256: [0; 32],
+        },
+        boot_stack: Stack {
+            virt_top: STACK_WINDOW + 4096 + BOOT_STACK_SIZE,
+            phys_base: 0x0120_0000,
+            size: BOOT_STACK_SIZE,
+        },
         ..BootInfo::default()
     };
     edit(&mut header);

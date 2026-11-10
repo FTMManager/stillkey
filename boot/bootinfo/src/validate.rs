@@ -32,6 +32,8 @@ pub enum Reject {
     Cmdline,
     Framebuffer,
     Bootfs,
+    Kernel,
+    Stack,
 }
 
 impl Reject {
@@ -48,6 +50,8 @@ impl Reject {
             Reject::Cmdline => "cmdline",
             Reject::Framebuffer => "framebuffer",
             Reject::Bootfs => "bootfs",
+            Reject::Kernel => "kernel",
+            Reject::Stack => "stack",
         }
     }
 }
@@ -268,7 +272,47 @@ pub fn validate(block: &[u8], block_phys: u64) -> Result<Accepted<'_>, Reject> {
     // ---- BOOTFS.IMG ----
     check_bootfs(&header, reserved)?;
 
+    // ---- Kernel image and boot stack ----
+    check_kernel(&header.kernel, reserved)?;
+    check_stack(&header.boot_stack, reserved)?;
+
     Ok(Accepted { header, regions, reserved, cmdline })
+}
+
+/// The one reserved range of `purpose`, if there is exactly one.
+fn only_range(reserved: &[u8], purpose: u32) -> Option<ReservedRange> {
+    let mut ranges = reserved_in(reserved).filter(|r| r.purpose == purpose);
+    match (ranges.next(), ranges.next()) {
+        (Some(range), None) => Some(range),
+        _ => None,
+    }
+}
+
+/// The kernel maps its own image from this record (docs/10 section 5.4):
+/// the image starts at the kernel window, lies on whole pages of physical
+/// memory that exactly one reserved range protects, and the entry point is
+/// inside it.
+fn check_kernel(kernel: &crate::KernelImage, reserved: &[u8]) -> Result<(), Reject> {
+    let well_formed = kernel.virt_base == crate::KERNEL_WINDOW
+        && kernel.phys_base % PAGE_SIZE == 0
+        && kernel.size != 0
+        && kernel.virt_base.checked_add(kernel.size).is_some();
+    let entry_inside =
+        kernel.entry.checked_sub(kernel.virt_base).is_some_and(|offset| offset < kernel.size);
+    let covered = only_range(reserved, crate::PURPOSE_KERNEL_IMAGE)
+        .is_some_and(|r| r.base == kernel.phys_base && r.pages == kernel.size.div_ceil(PAGE_SIZE));
+    if well_formed && entry_inside && covered { Ok(()) } else { Err(Reject::Kernel) }
+}
+
+/// The kernel frees the boot stack by this record once it runs on its own
+/// (docs/10 section 5.4): 64 KiB, mapped one guard page above the start of
+/// the stack window, on exactly the pages of the one range reserved for it.
+fn check_stack(stack: &crate::Stack, reserved: &[u8]) -> Result<(), Reject> {
+    let well_formed = stack.size == crate::BOOT_STACK_SIZE
+        && stack.virt_top == crate::STACK_WINDOW + PAGE_SIZE + crate::BOOT_STACK_SIZE;
+    let covered = only_range(reserved, crate::PURPOSE_BOOT_STACK)
+        .is_some_and(|r| r.base == stack.phys_base && r.pages == stack.size / PAGE_SIZE);
+    if well_formed && covered { Ok(()) } else { Err(Reject::Stack) }
 }
 
 /// With the flag: the image has a page-aligned base that is not zero and a
