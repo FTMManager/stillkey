@@ -4,19 +4,23 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 mod arch;
 mod bootcheck;
 mod fb;
+mod heap;
 mod log;
 mod lowmap;
 mod m2;
 mod memsum;
 mod panic;
 mod phys;
+mod proc;
 mod qemu;
+mod sched;
 mod tables;
 mod timer;
-mod user;
 mod virt;
 
 use core::arch::asm;

@@ -9,6 +9,10 @@ pub const KIND_CRASHES: u64 = 3;
 pub const KIND_CRASH_REGISTERS: u64 = 4;
 
 /// `ProcessRecord::state`.
+/// `ProcessRecord::class`: the class of the program's BOOTFS.IMG entry.
+pub const CLASS_APP: u32 = 1;
+pub const CLASS_SYSTEM: u32 = 2;
+
 pub const STATE_ALIVE: u32 = 1;
 pub const STATE_EXITED: u32 = 2;
 pub const STATE_CRASHED: u32 = 3;

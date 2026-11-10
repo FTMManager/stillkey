@@ -1,0 +1,17 @@
+[package]
+name = "inspector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+build = "build.rs"
+
+[[bin]]
+name = "inspector"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+libstill = { workspace = true }

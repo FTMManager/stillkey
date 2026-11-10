@@ -10,11 +10,11 @@ use crate::build::{self, Artifacts};
 use crate::inspect::{self, Corruption};
 use crate::qemu::{self, Accel, Serial, Vm};
 use crate::util::{cache_dir, sha256_hex, workspace_root};
-use crate::{check, image, screen};
+use crate::{check, image, m2, screen};
 
 pub const NAMES: &str =
     "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey, m1, \
-     m2-hello, m2-kwrite or m2-kexec";
+     m2-hello, m2, m2-preempt, m2-kwrite or m2-kexec";
 
 pub struct TestOpts {
     pub release: bool,
@@ -24,7 +24,7 @@ pub struct TestOpts {
 }
 
 impl TestOpts {
-    fn profile(&self) -> &'static str {
+    pub fn profile(&self) -> &'static str {
         if self.release { "release" } else { "dev" }
     }
 }
@@ -48,6 +48,8 @@ pub fn run(name: &str, o: &TestOpts) -> Result<(), String> {
         "m1-serial" => boots(&[serial_boot]),
         "m1-stalekey" => boots(&[stalekey_boot]),
         "m2-hello" => boots(&[hello_boot]),
+        "m2" => boots(&[m2::crash_boot]),
+        "m2-preempt" => boots(&[m2::preempt_boot]),
         "m2-kwrite" => boots(&[kwrite_boot]),
         "m2-kexec" => boots(&[kexec_boot]),
         "m1" => check::require_present().and_then(|_| {
@@ -223,10 +225,10 @@ fn repro() -> Result<(), String> {
 
 // ---- Boot tests ------------------------------------------------------------
 
-struct Outcome {
-    status: i32,
-    lines: Vec<String>,
-    firmware_lines: usize,
+pub struct Outcome {
+    pub status: i32,
+    pub lines: Vec<String>,
+    pub firmware_lines: usize,
 }
 
 /// The start of a run's `qemu.log` (docs/07 section 5): the `setup-check`
@@ -254,7 +256,7 @@ fn check_log_header(log: &str) -> Result<(), String> {
 /// Removes terminal escape sequences and carriage returns, then keeps the
 /// lines that start with `SK:`. Also counts the non-empty lines firmware
 /// printed before the first of them.
-fn sk_lines(raw: &[u8]) -> (Vec<String>, usize) {
+pub fn sk_lines(raw: &[u8]) -> (Vec<String>, usize) {
     let mut clean = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < raw.len() {
@@ -291,7 +293,7 @@ fn sk_lines(raw: &[u8]) -> (Vec<String>, usize) {
 
 /// Each line of the file is a required prefix, in order; other `SK:` lines may
 /// come in between. A line starting with `!` is text no `SK:` line may contain.
-fn check_expect(lines: &[String], name: &str) -> Result<(), String> {
+pub fn check_expect(lines: &[String], name: &str) -> Result<(), String> {
     let path = workspace_root().join("tests").join(format!("{name}.expect"));
     let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut next = 0;
@@ -327,7 +329,7 @@ fn expect_field(lines: &[String], prefix: &str, key: &str, want: &str) -> Result
     if got == want { Ok(()) } else { Err(format!("{prefix} {key}={got}, expected {want}")) }
 }
 
-fn expect_status(outcome: &Outcome, want: i32) -> Result<(), String> {
+pub fn expect_status(outcome: &Outcome, want: i32) -> Result<(), String> {
     if outcome.status == want {
         Ok(())
     } else {
@@ -337,7 +339,7 @@ fn expect_status(outcome: &Outcome, want: i32) -> Result<(), String> {
 
 /// Copies the files of a run to `build/<name>`, where Windows tools can read
 /// them, and returns that folder.
-fn keep_evidence(dir: &Path, name: &str, art: &Artifacts, lines: &[String]) -> Result<PathBuf, String> {
+pub fn keep_evidence(dir: &Path, name: &str, art: &Artifacts, lines: &[String]) -> Result<PathBuf, String> {
     let keep = workspace_root().join("build").join(name);
     fs::create_dir_all(&keep).map_err(|e| e.to_string())?;
     for file in ["serial.log", "qemu.log", "screen.ppm"] {
@@ -391,7 +393,7 @@ fn boot_image(
 
 /// Prints the result line of one run; `name` is the test, with ` image=<x>`
 /// after it where a test boots several images.
-fn report(
+pub fn report(
     o: &TestOpts,
     name: &str,
     round: u32,
@@ -526,7 +528,7 @@ fn kexec_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
 }
 
 /// The allocator accounts for every page the handoff calls usable.
-fn frames_add_up(lines: &[String]) -> Result<(), String> {
+pub fn frames_add_up(lines: &[String]) -> Result<(), String> {
     let usable = number(lines, "SK:KERNEL:MEM usable_after_reserve", "pages")?;
     let free = number(lines, "SK:KERNEL:FRAMES", "free")?;
     let bitmap = number(lines, "SK:KERNEL:FRAMES", "bitmap_pages")?;

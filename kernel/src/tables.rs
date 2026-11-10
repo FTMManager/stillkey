@@ -1,18 +1,19 @@
 //! The descriptor tables, the entry code of all 256 vectors, and what
 //! happens when one of them is taken (docs/10 sections 7 and 8.2).
 //!
-//! Checkpoint 1: the timer, the system call and the two spurious vectors
-//! are handled; every other vector ends the kernel with a banner, whichever
-//! ring it came from.
+//! The timer, the system call and the spurious vectors are handled. An
+//! exception a program caused ends that program; any other ends the kernel
+//! with a banner.
 
 use core::arch::{asm, global_asm};
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use sk_kcore::fault::{self, Charge};
 use sk_kcore::x86::{self, Gate, TablePointer, TrapFrame, Tss};
 
 use crate::arch::{self, Global};
-use crate::{halt, log, qemu, timer, user};
+use crate::{halt, log, proc, qemu, sched, timer};
 
 const IST_SIZE: usize = 16 << 10;
 
@@ -178,13 +179,22 @@ pub fn smap_enabled() {
 /// frame, changed or not, and resumes what was interrupted.
 extern "C" fn isr_dispatch(frame: &mut TrapFrame) {
     match frame.vector as u8 {
-        x86::VECTOR_TIMER => timer::on_tick(),
-        x86::VECTOR_SYSCALL if frame.from_user() => user::syscall(frame),
+        x86::VECTOR_TIMER => {
+            timer::on_tick();
+            proc::on_tick(timer::ticks());
+            sched::on_tick(timer::ticks(), frame.from_user());
+        }
+        x86::VECTOR_SYSCALL if frame.from_user() => proc::syscall(frame),
         x86::VECTOR_PIC_SPURIOUS_MASTER | x86::VECTOR_PIC_SPURIOUS_SLAVE => {
             timer::on_spurious(frame.vector as u8)
         }
         x86::VECTOR_APIC_SPURIOUS => {}
-        _ => fatal(frame),
+        // An exception: the program that caused it ends, or, if no
+        // program did, the kernel stops (docs/10 section 8.2).
+        vector => match fault::classify(vector, frame.cs, frame.error) {
+            Charge::Process => proc::crash(frame),
+            Charge::Kernel => fatal(frame),
+        },
     }
 }
 

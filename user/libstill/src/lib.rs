@@ -8,7 +8,8 @@ use core::fmt;
 
 pub use stillkey_abi as abi;
 use stillkey_abi::{
-    DEBUG_WRITE_MAX, SYS_ABI_VERSION, SYS_CLOCK, SYS_DEBUG_WRITE, SYS_EXIT, SYS_YIELD, Status,
+    DEBUG_WRITE_MAX, SYS_ABI_VERSION, SYS_CLOCK, SYS_DEBUG_WRITE, SYS_DIAG_READ, SYS_EXIT,
+    SYS_HANDLE_CLOSE, SYS_MEM_ALLOC, SYS_MEM_FREE, SYS_SLEEP, SYS_YIELD, Status,
 };
 
 /// One system call: `int 0x80`, number in `RAX`, arguments in `RDI`, `RSI`,
@@ -64,6 +65,40 @@ pub fn yield_now() {
 /// Nanoseconds since the system started its programs.
 pub fn clock() -> u64 {
     syscall(SYS_CLOCK, [0; 5]).0
+}
+
+/// Waits at least `ns` nanoseconds, in whole timer ticks.
+pub fn sleep(ns: u64) {
+    syscall(SYS_SLEEP, [ns, 0, 0, 0, 0]);
+}
+
+fn status(ret: u64) -> Status {
+    Status::of_return(ret).unwrap_or(Status::InvalidArgs)
+}
+
+/// Fresh zeroed pages that hold at least `len` bytes.
+pub fn mem_alloc(len: u64) -> Result<*mut u8, Status> {
+    let ret = syscall(SYS_MEM_ALLOC, [len, 0, 0, 0, 0]).0;
+    match status(ret) {
+        Status::Ok => Ok(ret as *mut u8),
+        failure => Err(failure),
+    }
+}
+
+/// Gives back pages that came from [`mem_alloc`].
+pub fn mem_free(addr: *mut u8, len: u64) -> Status {
+    status(syscall(SYS_MEM_FREE, [addr as u64, len, 0, 0, 0]).0)
+}
+
+pub fn handle_close(handle: u32) -> Status {
+    status(syscall(SYS_HANDLE_CLOSE, [u64::from(handle), 0, 0, 0, 0]).0)
+}
+
+/// Reads diagnostic records of one kind into `buf`. Returns what the kernel
+/// left in `RAX` (the bytes written, or a failure: see `Status::of_return`)
+/// and the cursor for the next call, 0 when nothing is left.
+pub fn diag_read(handle: u32, kind: u64, cursor: u64, buf: *mut u8, len: usize) -> (u64, u64) {
+    syscall(SYS_DIAG_READ, [u64::from(handle), kind, cursor, buf as u64, len as u64])
 }
 
 /// A line being put together for [`debug_write`]. Text beyond 256 bytes is cut.

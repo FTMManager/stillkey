@@ -260,6 +260,7 @@ pub fn release_loader_memory(info: &Accepted<'_>) -> u64 {
             released += 1;
         }
     }
+    phys::add_total(released);
     released
 }
 

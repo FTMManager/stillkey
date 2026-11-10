@@ -4,8 +4,10 @@
 mod bootfs;
 mod build;
 mod check;
+mod follow;
 mod image;
 mod inspect;
+mod m2;
 mod qemu;
 mod screen;
 mod tests;
@@ -22,7 +24,7 @@ usage: cargo xtask <command>
   build  [--release]
   image  [--release] [--cmdline \"<boot options>\"]
   run    [--release] [--accel kvm|tcg] [--cmdline \"<boot options>\"] [--gui] [--gdb] [--monitor] [--trace]
-  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2-kwrite|m2-kexec>
+  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2|m2-preempt|m2-kwrite|m2-kexec>
          [--release] [--repeat N] [--accel kvm|tcg] [--timeout SECONDS]
   clean";
 

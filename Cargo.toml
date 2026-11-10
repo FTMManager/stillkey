@@ -3,7 +3,8 @@ resolver = "3"
 members = [
     "xtask", "boot/bootinfo", "boot/loader", "kernel",
     "lib/sk-elf", "lib/sk-serial", "lib/abi", "lib/sk-bootfs", "lib/sk-kcore",
-    "user/libstill", "user/samples/hello",
+    "user/libstill", "user/samples/hello", "user/samples/ticker", "user/samples/faulter",
+    "user/samples/spinner", "user/samples/inspector",
 ]
 default-members = ["xtask"]          # bare `cargo build` builds only the host tool
 

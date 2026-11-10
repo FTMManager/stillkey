@@ -3,7 +3,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use crate::check::{OVMF_CODE, OVMF_VARS, kvm_usable, report_once};
 
@@ -156,21 +156,28 @@ pub fn quit_after(vm: &Vm, marker: &str) -> Result<i32, String> {
     after_marker(vm, marker, "quit\n")
 }
 
-/// Starts the VM and sends `commands` to the monitor once `marker` is in
-/// the serial log.
-fn after_marker(vm: &Vm, marker: &str, commands: &str) -> Result<i32, String> {
+/// Starts a VM whose monitor reads from the returned child's standard
+/// input. `vm` must have a time limit, the serial port in a file and the
+/// monitor on.
+pub fn spawn_monitored(vm: &Vm) -> Result<Child, String> {
     if vm.timeout.is_none() || vm.serial != Serial::File || !vm.monitor {
         return Err("this run needs a time limit, a serial file and the monitor".to_string());
     }
     let (program, args) = command(vm)?;
     let log = open_log(vm, &program, &args)?;
-    let mut child = Command::new(&program)
+    Command::new(&program)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)
         .stderr(log)
         .spawn()
-        .map_err(|e| format!("{program}: {e}"))?;
+        .map_err(|e| format!("{program}: {e}"))
+}
+
+/// Starts the VM and sends `commands` to the monitor once `marker` is in
+/// the serial log.
+fn after_marker(vm: &Vm, marker: &str, commands: &str) -> Result<i32, String> {
+    let mut child = spawn_monitored(vm)?;
 
     let serial_log = vm.dir.join("serial.log");
     let marker = marker.as_bytes();

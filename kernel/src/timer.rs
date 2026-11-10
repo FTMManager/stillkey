@@ -185,6 +185,11 @@ pub fn on_spurious(vector: u8) {
     }
 }
 
+/// Timer interrupts since boot.
+pub fn ticks() -> u64 {
+    TICKS.load(Ordering::Relaxed)
+}
+
 /// Nanoseconds since the programs were started, in steps of one tick.
 pub fn clock_ns() -> u64 {
     (TICKS.load(Ordering::Relaxed) - EPOCH.load(Ordering::Relaxed)) * TICK_NS

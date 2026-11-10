@@ -97,6 +97,13 @@ control_register!(read_cr3, write_cr3, "cr3");
 control_register!(read_cr4, write_cr4, "cr4");
 
 /// The address a page fault was taken for.
+/// Drops the translation of one page from the processor's cache.
+pub fn invlpg(virt: u64) {
+    // SAFETY: the instruction changes no memory and no register; a
+    // dropped translation is looked up again in the tables.
+    unsafe { asm!("invlpg [{}]", in(reg) virt, options(nostack, preserves_flags)) };
+}
+
 pub fn read_cr2() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading the register changes nothing.

@@ -4,3 +4,7 @@
 # class is app or system; mem_mib 0 is the default limit; flags is - or a
 # comma-separated list of critical and display.
 bin/hello | program:hello | hello | Hello | app | 0 | -
+bin/ticker | program:ticker | ticker | Ticker | app | 0 | -
+bin/faulter | program:faulter | faulter | Faulter | app | 0 | -
+bin/spinner | program:spinner | spinner | Spinner | app | 0 | -
+bin/inspector | program:inspector | inspector | Inspector | system | 0 | -

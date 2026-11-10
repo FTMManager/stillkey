@@ -20,6 +20,8 @@ struct State {
 }
 
 static STATE: Global<Option<State>> = Global::new(None);
+/// Frames the allocator manages: free ones and those it has handed out.
+static TOTAL: Global<u64> = Global::new(0);
 
 pub struct Summary {
     pub total: u64,
@@ -99,7 +101,10 @@ pub fn init(info: &Accepted<'_>) -> Summary {
 
     let free = map.free_count();
     // SAFETY: one processor, interrupts off; set once, before any use.
-    unsafe { *STATE.get() = Some(State { map, spans, span_count }) };
+    unsafe {
+        *STATE.get() = Some(State { map, spans, span_count });
+        *TOTAL.get() = free;
+    }
     Summary { total: free, free, bitmap_pages }
 }
 
@@ -127,6 +132,18 @@ pub fn free(phys: u64) {
     // SAFETY: the frame was handed out and its owner has given it up; the
     // direct map covers it.
     unsafe { ptr::write_bytes(direct(phys), 0xFA, PAGE_SIZE as usize) };
+}
+
+/// Frames the allocator manages.
+pub fn total() -> u64 {
+    // SAFETY: one processor, interrupts off.
+    unsafe { *TOTAL.get() }
+}
+
+/// Counts frames that were reserved at boot and have been freed since.
+pub fn add_total(frames: u64) {
+    // SAFETY: one processor, interrupts off.
+    unsafe { *TOTAL.get() += frames };
 }
 
 pub fn free_count() -> u64 {

@@ -11,14 +11,21 @@ use stillkey_bootinfo::{Accepted, DIRECT_MAP_BASE};
 
 use crate::arch::{self, Global};
 use crate::log::Escaped;
-use crate::{has_option, log, phys, tables, timer, user, virt};
+use crate::{has_option, log, phys, proc, sched, tables, timer, virt};
 
-/// A scenario: its name and the programs it starts, by path in BOOTFS.IMG.
-type Scenario = (&'static [u8], &'static [&'static str]);
+/// A program of a scenario: its path in BOOTFS.IMG, and whether it gets the
+/// handle that reads the system's diagnostics.
+type Start = (&'static str, bool);
+/// A scenario: its name and the programs it starts, in PID order.
+type Scenario = (&'static [u8], &'static [Start]);
 
-/// The scenarios this kernel knows. The first runs when the command line
-/// selects none; from checkpoint 2 that is `m2`.
-const SCENARIOS: &[Scenario] = &[(b"m2-hello", &["bin/hello"])];
+/// The start table (docs/10 section 9). The first scenario runs when the
+/// command line selects none.
+const SCENARIOS: &[Scenario] = &[
+    (b"m2", &[("bin/ticker", false), ("bin/faulter", false), ("bin/inspector", true)]),
+    (b"m2-hello", &[("bin/hello", false)]),
+    (b"m2-preempt", &[("bin/ticker", false), ("bin/spinner", false), ("bin/inspector", true)]),
+];
 
 /// The first `test=` word that names a scenario selects it. Other `test=`
 /// words are for the loader or for the steps before this one and are
@@ -131,7 +138,8 @@ extern "C" fn on_own_tables() -> ! {
     // ---- Step 14: self-test, if selected ----
     selftest(info.cmdline());
 
-    // ---- Step 15: the kernel half gets its final top level ----
+    // ---- Step 15: the heap; the kernel half gets its final top level ----
+    log!("SK:KERNEL:HEAP base={:#x}", sk_kcore::HEAP_BASE);
     log!("SK:KERNEL:KSPACE sealed tables={}", virt::seal());
 
     // ---- Steps 16-17: the local APIC and the tick, still masked ----
@@ -139,6 +147,10 @@ extern "C" fn on_own_tables() -> ! {
     log!("SK:KERNEL:APIC mode={} lint0=extint", mode);
     timer::init_pit();
     log!("SK:KERNEL:TIMER hz={} clock=ticks", timer::HZ);
+
+    // ---- Step 17a: two kernel threads take turns ----
+    sched::init(carried.stack_top);
+    log!("SK:KERNEL:SCHED_OK switches={}", sched::self_check());
 
     // ---- Step 18: BOOTFS.IMG ----
     let Some(range) = info.bootfs() else {
@@ -162,18 +174,21 @@ extern "C" fn on_own_tables() -> ! {
     let (scenario, programs) = scenario_of(info.cmdline());
     log!("SK:KERNEL:SCENARIO name={} programs={}", Escaped(scenario), programs.len());
 
-    user::init(root, carried.stack_top);
-    let path = programs[0];
-    let Some(entry) = image.find(path) else {
-        panic!("{path} is not in BOOTFS.IMG");
-    };
-    let frame = user::spawn(1, &entry, image.data(&entry));
+    proc::init();
+    for &(path, diag) in programs {
+        let Some(entry) = image.find(path) else {
+            panic!("{path} is not in BOOTFS.IMG");
+        };
+        if let Err(reason) = proc::spawn(&entry, image.data(&entry), diag) {
+            log!("SK:KERNEL:SPAWN_REFUSED name={} reason={}", entry.name, reason);
+        }
+    }
 
     // The mappings made since step 12 obey the same rules.
     virt::audit();
 
-    // ---- Step 20: the tick, and the first program ----
+    // ---- Step 20: the tick; this thread becomes the idle thread ----
     timer::start();
     log!("SK:KERNEL:M2_RUNNING");
-    user::enter(frame)
+    sched::idle()
 }

@@ -58,6 +58,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "faulter"
+version = "0.1.0"
+dependencies = [
+ "libstill",
+]
+
+[[package]]
 name = "hello"
 version = "0.1.0"
 dependencies = [
@@ -71,6 +78,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
 dependencies = [
  "typenum",
+]
+
+[[package]]
+name = "inspector"
+version = "0.1.0"
+dependencies = [
+ "libstill",
 ]
 
 [[package]]
@@ -164,6 +178,13 @@ name = "sk-serial"
 version = "0.1.0"
 
 [[package]]
+name = "spinner"
+version = "0.1.0"
+dependencies = [
+ "libstill",
+]
+
+[[package]]
 name = "stillkey-abi"
 version = "0.1.0"
 
@@ -203,6 +224,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "ticker"
+version = "0.1.0"
+dependencies = [
+ "libstill",
 ]
 
 [[package]]

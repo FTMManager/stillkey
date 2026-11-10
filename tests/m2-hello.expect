@@ -17,10 +17,12 @@ SK:KERNEL:FRAMES total=
 SK:KERNEL:PAGING root=
 SK:KERNEL:FRAMES released=
 SK:KERNEL:PAGING_AUDIT pages=
+SK:KERNEL:HEAP base=0xffffc00000000000
 SK:KERNEL:KSPACE sealed tables=256
 SK:KERNEL:APIC mode=
 SK:KERNEL:TIMER hz=100 clock=ticks
-SK:KERNEL:BOOTFS entries=1 bytes=
+SK:KERNEL:SCHED_OK switches=6
+SK:KERNEL:BOOTFS entries=5 bytes=
 SK:KERNEL:SCENARIO name=m2-hello programs=1
 SK:KERNEL:SPAWN pid=1 name=hello class=App handles=0
 SK:KERNEL:M2_RUNNING
