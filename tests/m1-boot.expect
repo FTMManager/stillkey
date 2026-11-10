@@ -1,0 +1,32 @@
+SK:LOADER:START version=0.1.0 profile=
+SK:LOADER:IMAGE base=0x
+SK:LOADER:CMDLINE len=12
+SK:LOADER:KERNEL_FILE size=
+SK:LOADER:KERNEL_SHA256 
+SK:LOADER:KERNEL_VALID entry=0xffffffff80
+SK:LOADER:KERNEL_LOADED phys=0x
+SK:LOADER:GOP mode=
+SK:LOADER:ACPI rsdp=0x
+SK:LOADER:PAGING root=0x
+SK:LOADER:BOOTINFO phys=0x
+SK:LOADER:EBS_BEGIN
+SK:LOADER:EBS_OK attempts=
+SK:LOADER:CR4 pge_was=
+SK:LOADER:JUMP entry=0xffffffff80
+SK:KERNEL:START version=0.1.0 profile=
+SK:KERNEL:BOOTINFO_OK version=1.0 size=
+SK:KERNEL:CMDLINE "qemu_exit=on"
+SK:KERNEL:CR4 pge=0
+SK:KERNEL:IMAGE sha256=
+SK:KERNEL:MEM kind=usable regions=
+SK:KERNEL:MEM kind=loader regions=
+SK:KERNEL:MEM kind=boot_services regions=
+SK:KERNEL:MEM reserved ranges=5 pages=
+SK:KERNEL:MEM usable_after_reserve pages=
+SK:KERNEL:MEM direct_map_gib=4
+SK:KERNEL:FB_FILLED 
+SK:KERNEL:LOWMAP_DROPPED
+SK:KERNEL:M1_OK
+!PANIC
+!REJECTED
+!FAILED

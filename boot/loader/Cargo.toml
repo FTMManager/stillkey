@@ -1,0 +1,21 @@
+[package]
+name = "stillkey-loader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Binary only: the loader is never built for the host and is tested by booting it.
+[[bin]]
+name = "stillkey-loader"
+path = "src/main.rs"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+uefi = { workspace = true }
+sha2 = { workspace = true }
+stillkey-bootinfo = { workspace = true }
+sk-elf = { workspace = true }
+sk-serial = { workspace = true }

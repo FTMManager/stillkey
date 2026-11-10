@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["xtask", "boot/bootinfo", "boot/loader", "kernel", "lib/sk-elf", "lib/sk-serial"]
+default-members = ["xtask"]          # bare `cargo build` builds only the host tool
+
+[workspace.package]
+version = "0.1.0"                    # every crate sets `version.workspace = true`
+edition = "2024"
+rust-version = "1.99"
+
+[workspace.dependencies]
+uefi = { version = "=0.41.0", default-features = false }   # no allocator, no logger: decision D-B-3
+sha2 = { version = "=0.11.1", default-features = false }
+stillkey-bootinfo = { path = "boot/bootinfo" }
+sk-elf = { path = "lib/sk-elf" }
+sk-serial = { path = "lib/sk-serial" }
+
+[profile.dev]
+opt-level = 1                        # keeps emulated boots quick; still debuggable
+[profile.release]
+opt-level = 2
+debug = "line-tables-only"           # the kernel ELF keeps DWARF for GDB
+codegen-units = 1
+overflow-checks = true
