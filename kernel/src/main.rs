@@ -4,6 +4,7 @@
 #![no_std]
 #![no_main]
 
+mod arch;
 mod bootcheck;
 mod fb;
 mod log;
@@ -11,7 +12,11 @@ mod lowmap;
 mod m2;
 mod memsum;
 mod panic;
+mod phys;
 mod qemu;
+mod tables;
+mod timer;
+mod user;
 
 use core::arch::asm;
 

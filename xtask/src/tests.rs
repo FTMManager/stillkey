@@ -13,7 +13,7 @@ use crate::util::{cache_dir, sha256_hex, workspace_root};
 use crate::{check, image, screen};
 
 pub const NAMES: &str =
-    "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey or m1";
+    "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey, m1 or m2-hello";
 
 pub struct TestOpts {
     pub release: bool,
@@ -46,6 +46,7 @@ pub fn run(name: &str, o: &TestOpts) -> Result<(), String> {
         "m1-reject" => boots(&[reject_boot]),
         "m1-serial" => boots(&[serial_boot]),
         "m1-stalekey" => boots(&[stalekey_boot]),
+        "m2-hello" => boots(&[hello_boot]),
         "m1" => check::require_present().and_then(|_| {
             host_tests()?;
             let art = build::build(o.release)?;
@@ -341,6 +342,7 @@ fn keep_evidence(dir: &Path, name: &str, art: &Artifacts, lines: &[String]) -> R
     }
     let _ = fs::copy(&art.loader, keep.join("BOOTX64.EFI"));
     let _ = fs::copy(&art.kernel, keep.join("KERNEL.ELF"));
+    let _ = fs::copy(&art.bootfs, keep.join("BOOTFS.IMG"));
     let sk_text: String = lines.iter().map(|l| format!("{l}\n")).collect();
     let _ = fs::write(keep.join("sk-lines.txt"), sk_text);
     Ok(keep)
@@ -401,6 +403,76 @@ fn report(
         println!("  FAILED: {why}");
         println!("  logs: {}", kept.display());
     }
+}
+
+/// A number field of the first line that starts with `prefix`.
+fn number(lines: &[String], prefix: &str, key: &str) -> Result<u64, String> {
+    let text = field(lines, prefix, key)?;
+    text.parse().map_err(|_| format!("{prefix}: {key}={text} is not a number"))
+}
+
+/// `m2-hello`, checkpoint 1 of Milestone 2 (docs/10 section 11.1): the timer
+/// fires, and one ring-3 program prints through the kernel and exits. The
+/// kernel does not end the VM; the harness does, after the hundredth tick.
+fn hello_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
+    let name = "m2-hello";
+    let dir = cache_dir().join(name);
+    image::make(&dir, art, Some("qemu_exit=on"), true)?;
+    let status = qemu::quit_after(
+        &Vm {
+            dir: &dir,
+            accel: o.accel,
+            timeout: Some(o.timeout),
+            serial: Serial::File,
+            gui: false,
+            monitor: true,
+            trace: false,
+            gdb: false,
+        },
+        "SK:KERNEL:TIMER_OK",
+    )?;
+    let raw = fs::read(dir.join("serial.log")).unwrap_or_default();
+    let (lines, firmware_lines) = sk_lines(&raw);
+    let kept = keep_evidence(&dir, name, art, &lines)?;
+    let outcome = Outcome { status, lines, firmware_lines };
+    let lines = &outcome.lines;
+
+    let verdict = (|| {
+        check_expect(lines, name)?;
+        // The harness ended the VM: the kernel neither panicked nor stopped.
+        expect_status(&outcome, 0)?;
+
+        // The loader read the image this build packed.
+        let digest = format!("SK:LOADER:BOOTFS_SHA256 {}", art.bootfs_sha256);
+        if !lines.contains(&digest) {
+            return Err(format!("no line `{digest}`"));
+        }
+
+        // The allocator accounts for every page the handoff calls usable.
+        let usable = number(lines, "SK:KERNEL:MEM usable_after_reserve", "pages")?;
+        let free = number(lines, "SK:KERNEL:FRAMES", "free")?;
+        let bitmap = number(lines, "SK:KERNEL:FRAMES", "bitmap_pages")?;
+        if free + bitmap != usable {
+            return Err(format!("free {free} + bitmap {bitmap} is not usable_after_reserve {usable}"));
+        }
+
+        // Everything the program had came back: its image pages, sixteen
+        // stack pages, and seven page tables (the top level, and three
+        // levels each for the image and the stack).
+        let hello = art.bootfs.with_file_name("bin").join("hello");
+        let file = fs::read(&hello).map_err(|e| format!("{}: {e}", hello.display()))?;
+        let image = sk_elf::validate(&file, &sk_elf::user_policy(stillkey_abi::DEFAULT_MEM_LIMIT))
+            .map_err(|reason| format!("bin/hello: {}", reason.as_str()))?;
+        let image_pages: u64 = image.segments().iter().map(|s| s.memsz.div_ceil(4096)).sum();
+        let want = image_pages + stillkey_abi::USER_STACK_SIZE / 4096 + 7;
+        let reaped = number(lines, "SK:KERNEL:REAPED", "frames")?;
+        if reaped != want {
+            return Err(format!("REAPED frames={reaped}, expected {want} ({image_pages} image pages)"));
+        }
+        Ok(())
+    })();
+    report(o, name, round, &outcome, &kept, &verdict);
+    verdict
 }
 
 /// The mode in the kernel's `FB_FILLED <w>x<h> format=<f>` line.

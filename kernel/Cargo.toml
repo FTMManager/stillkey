@@ -16,3 +16,10 @@ bench = false
 [dependencies]
 stillkey-bootinfo = { workspace = true }
 sk-serial = { workspace = true }
+sk-bootfs = { workspace = true }
+sk-elf = { workspace = true }
+sk-kcore = { workspace = true }
+stillkey-abi = { workspace = true }
+
+[build-dependencies]
+sk-kcore = { workspace = true }

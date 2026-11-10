@@ -175,7 +175,11 @@ version = "0.1.0"
 name = "stillkey-kernel"
 version = "0.1.0"
 dependencies = [
+ "sk-bootfs",
+ "sk-elf",
+ "sk-kcore",
  "sk-serial",
+ "stillkey-abi",
  "stillkey-bootinfo",
 ]
 

@@ -62,6 +62,17 @@ impl Tss {
     }
 }
 
+impl Tss {
+    /// `rsp0` is the stack for an interrupt that arrives in ring 3;
+    /// `ist[n]` is the stack of index `n + 1`.
+    pub const fn with_stacks(rsp0: u64, ist: [u64; IST_STACKS]) -> Tss {
+        let mut tss = Tss::new();
+        tss.rsp = [rsp0, 0, 0];
+        tss.ist = [ist[0], ist[1], ist[2], 0, 0, 0, 0];
+        tss
+    }
+}
+
 impl Default for Tss {
     fn default() -> Tss {
         Tss::new()
@@ -275,6 +286,10 @@ mod tests {
         assert_eq!(offset_of!(Tss, ist), 0x24);
         assert_eq!(offset_of!(Tss, iomap_base), 0x66);
         let tss = Tss::new();
+        assert_eq!({ tss.iomap_base }, 0x68);
+        let tss = Tss::with_stacks(0x1000, [0x2000, 0x3000, 0x4000]);
+        assert_eq!({ tss.rsp }, [0x1000, 0, 0]);
+        assert_eq!({ tss.ist }, [0x2000, 0x3000, 0x4000, 0, 0, 0, 0]);
         assert_eq!({ tss.iomap_base }, 0x68);
     }
 

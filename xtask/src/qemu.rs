@@ -144,11 +144,24 @@ pub fn run(vm: &Vm) -> Result<i32, String> {
 /// The guest is expected to stay up after the marker: it is not booted with
 /// `qemu_exit=on`.
 pub fn capture_screen(vm: &Vm, marker: &str, ppm: &Path) -> Result<i32, String> {
-    if vm.timeout.is_none() || vm.serial != Serial::File || !vm.monitor {
-        return Err("capture_screen needs a time limit, a serial file and the monitor".to_string());
-    }
     let ppm_text = ppm.to_str().ok_or("path is not UTF-8")?;
     let _ = fs::remove_file(ppm);
+    after_marker(vm, marker, &format!("screendump {ppm_text}\nquit\n"))
+}
+
+/// Starts the VM, waits until `marker` is in the serial log and ends the VM
+/// through the monitor (D-W-7). Returns QEMU's exit status: 0 if the harness
+/// ended it, the guest's own status if the guest ended first.
+pub fn quit_after(vm: &Vm, marker: &str) -> Result<i32, String> {
+    after_marker(vm, marker, "quit\n")
+}
+
+/// Starts the VM and sends `commands` to the monitor once `marker` is in
+/// the serial log.
+fn after_marker(vm: &Vm, marker: &str, commands: &str) -> Result<i32, String> {
+    if vm.timeout.is_none() || vm.serial != Serial::File || !vm.monitor {
+        return Err("this run needs a time limit, a serial file and the monitor".to_string());
+    }
     let (program, args) = command(vm)?;
     let log = open_log(vm, &program, &args)?;
     let mut child = Command::new(&program)
@@ -167,7 +180,6 @@ pub fn capture_screen(vm: &Vm, marker: &str, ppm: &Path) -> Result<i32, String> 
         if seen {
             // The monitor reads its commands from standard input.
             let mut monitor = child.stdin.take().ok_or("QEMU has no standard input")?;
-            let commands = format!("screendump {ppm_text}\nquit\n");
             monitor.write_all(commands.as_bytes()).map_err(|e| format!("QEMU monitor: {e}"))?;
             break;
         }
