@@ -4,9 +4,15 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod account;
+pub mod crash;
+pub mod fault;
 pub mod frames;
+pub mod handles;
+pub mod heap;
 pub mod logfmt;
 pub mod paging;
+pub mod sched;
 pub mod usercopy;
 pub mod x86;
 

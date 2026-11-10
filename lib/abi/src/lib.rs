@@ -93,6 +93,8 @@ impl Status {
 }
 
 /// Rights on a handle (docs/04 section 3).
+pub mod diag;
+
 pub mod rights {
     pub const READ: u32 = 1 << 0;
     pub const WRITE: u32 = 1 << 1;
