@@ -14,7 +14,7 @@ use crate::{check, image, m2, screen};
 
 pub const NAMES: &str =
     "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey, m1, \
-     m2-hello, m2, m2-preempt, m2-kwrite or m2-kexec";
+     m2-hello, m2, m2-preempt, m2-kwrite, m2-kexec or m2-screen";
 
 pub struct TestOpts {
     pub release: bool,
@@ -48,6 +48,9 @@ pub fn run(name: &str, o: &TestOpts) -> Result<(), String> {
         "m1-serial" => boots(&[serial_boot]),
         "m1-stalekey" => boots(&[stalekey_boot]),
         "m2-hello" => boots(&[hello_boot]),
+        "m2-screen" => check::require_present()
+            .and_then(|_| build::build(o.release))
+            .and_then(|art| m2::screen_boot(o, &art)),
         "m2" => boots(&[m2::crash_boot]),
         "m2-preempt" => boots(&[m2::preempt_boot]),
         "m2-kwrite" => boots(&[kwrite_boot]),

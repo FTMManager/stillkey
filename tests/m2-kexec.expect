@@ -16,6 +16,7 @@ SK:KERNEL:FRAMES total=
 SK:KERNEL:PAGING root=
 SK:KERNEL:FRAMES released=
 SK:KERNEL:PAGING_AUDIT pages=
+SK:KERNEL:FBCON on cols=160 rows=49
 SK:KERNEL:SELFTEST name=kexec_data addr=
 SK:KERNEL:PANIC_BEGIN
 SK:KERNEL:PANIC exception vector=14 error=

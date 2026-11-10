@@ -6,8 +6,8 @@ use std::fs;
 
 use crate::build::Artifacts;
 use crate::follow::{self, Verdict};
-use crate::image;
-use crate::qemu::{Serial, Vm};
+use crate::{image, screen};
+use crate::qemu::{self, Serial, Vm};
 use crate::tests::{Outcome, TestOpts, check_expect, expect_status, frames_add_up, keep_evidence, report, sk_lines};
 use crate::util::cache_dir;
 
@@ -396,6 +396,73 @@ pub fn crash_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), Strin
 /// the others.
 pub fn preempt_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     scenario(o, art, round, "m2-preempt", &|lines| check_preempt(lines).is_ok(), &check_preempt)
+}
+
+/// `m2-screen`: the kernel writes to its own code, without `qemu_exit`, so
+/// it stops with its banner on the screen. Every pixel must be the one the
+/// console code draws, on the host, from the serial lines after `FBCON on`.
+pub fn screen_boot(o: &TestOpts, art: &Artifacts) -> Result<(), String> {
+    let name = "m2-screen";
+    let dir = cache_dir().join(name);
+    image::make(&dir, art, Some("test=kwrite_text"), true)?;
+    let ppm = dir.join("screen.ppm");
+    // The kernel ends a line on the serial port after it drew the line.
+    let status = qemu::capture_screen(
+        &Vm {
+            dir: &dir,
+            accel: o.accel,
+            timeout: Some(o.timeout),
+            serial: Serial::File,
+            gui: false,
+            monitor: true,
+            trace: false,
+            gdb: false,
+        },
+        "SK:KERNEL:PANIC_END\r\n",
+        &ppm,
+    )?;
+    let raw = fs::read(dir.join("serial.log")).unwrap_or_default();
+    let (lines, firmware_lines) = sk_lines(&raw);
+    let kept = keep_evidence(&dir, name, art, &lines)?;
+    let outcome = Outcome { status, lines, firmware_lines };
+    let lines = &outcome.lines;
+
+    let (mut size, mut drawn_lines) = (String::from("none"), 0);
+    let verdict = (|| {
+        expect_status(&outcome, 0)?;
+        let on = lines
+            .iter()
+            .position(|l| l.starts_with("SK:KERNEL:FBCON on"))
+            .ok_or("no line `SK:KERNEL:FBCON on`")?;
+        let drawn = &lines[on + 1..];
+        if !drawn.iter().any(|l| l.starts_with("SK:KERNEL:PANIC_END")) {
+            return Err("the kernel did not print its banner".to_string());
+        }
+        drawn_lines = drawn.len();
+        let file = fs::read(&ppm).map_err(|e| format!("{}: {e}", ppm.display()))?;
+        let picture = screen::parse_ppm(&file)?;
+        size = format!("{}x{}", picture.width, picture.height);
+        let grid = (picture.width as u64 / 8, (picture.height as u64).saturating_sub(16) / 16);
+        if (num(&lines[on], "cols")?, num(&lines[on], "rows")?) != grid {
+            return Err(format!("a {size} screen has {} columns and {} rows: {}", grid.0, grid.1, lines[on]));
+        }
+        screen::check_same(&picture, &screen::render_console(picture.width, picture.height, drawn)?)
+    })();
+    println!(
+        "RESULT test={name} profile={} accel={} status={} screen={size} lines={drawn_lines} result={}",
+        o.profile(),
+        o.accel.as_str(),
+        outcome.status,
+        if verdict.is_ok() { "pass" } else { "fail" },
+    );
+    if let Err(why) = &verdict {
+        for line in lines {
+            println!("  {line}");
+        }
+        println!("  FAILED: {why}");
+        println!("  logs: {}", kept.display());
+    }
+    verdict
 }
 
 #[cfg(test)]

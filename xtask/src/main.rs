@@ -5,6 +5,7 @@ mod bootfs;
 mod build;
 mod check;
 mod follow;
+mod font;
 mod image;
 mod inspect;
 mod m2;
@@ -22,9 +23,10 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
   setup-check
   build  [--release]
+  font
   image  [--release] [--cmdline \"<boot options>\"]
   run    [--release] [--accel kvm|tcg] [--cmdline \"<boot options>\"] [--gui] [--gdb] [--monitor] [--trace]
-  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2|m2-preempt|m2-kwrite|m2-kexec>
+  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2|m2-preempt|m2-kwrite|m2-kexec|m2-screen>
          [--release] [--repeat N] [--accel kvm|tcg] [--timeout SECONDS]
   clean";
 
@@ -126,6 +128,7 @@ fn dispatch(raw: &[String]) -> Result<(), String> {
     match command {
         "setup-check" => check::setup_check(),
         "build" => build::build(args.release).map(|_| ()),
+        "font" => font::generate(),
         "image" => {
             let art = build::build(args.release)?;
             let img = image::make(&util::cache_dir().join("image"), &art, args.cmdline.as_deref(), true)?;

@@ -2,6 +2,9 @@
 //! Milestone 1 kernel paints: a band of `cyan` along the top edge and `void`
 //! below it (docs/07 section 7, kernel step 5).
 
+use sk_kcore::console::{self, Console};
+use stillkey_bootinfo::{FB_FORMAT_RGBX, FRAMEBUFFER_VIRT, Framebuffer};
+
 /// Design tokens of docs/05 section 2, as red, green, blue.
 pub const VOID: [u8; 3] = [0x06, 0x08, 0x0C];
 pub const CYAN: [u8; 3] = [0x3D, 0xDC, 0xFF];
@@ -91,6 +94,56 @@ pub fn check_fill(picture: &Picture<'_>) -> Result<(), String> {
     }
 }
 
+/// The screen after the kernel's console drew `lines`, three bytes per
+/// pixel: the band of kernel step 5, then each line in `text`, and in
+/// `red` from the line that begins a panic banner (docs/10 section 10).
+pub fn render_console(width: usize, height: usize, lines: &[String]) -> Result<Vec<u8>, String> {
+    let size = |n: usize| u32::try_from(n).map_err(|_| "the screen is too large".to_string());
+    let fb = Framebuffer {
+        phys_base: 0x1000,
+        size: (width * height * 4) as u64,
+        virt_base: FRAMEBUFFER_VIRT,
+        width: size(width)?,
+        height: size(height)?,
+        stride_pixels: size(width)?,
+        format: FB_FORMAT_RGBX,
+    };
+    let colour = |c: [u8; 3]| u32::from_be_bytes([0, c[0], c[1], c[2]]);
+    let mut buf = vec![0u8; width * height * 4];
+    let band = BAND_ROWS.min(height) as u32;
+    if !(fb.fill_rows(&mut buf, 0, band, colour(CYAN)) && fb.fill_rows(&mut buf, band, fb.height, colour(VOID))) {
+        return Err(format!("a {width}x{height} screen cannot be painted"));
+    }
+    let mut console = Console::new(&fb).ok_or(format!("a {width}x{height} screen has no room for text"))?;
+    let mut banner = false;
+    for line in lines {
+        banner |= line.starts_with("SK:KERNEL:PANIC_BEGIN");
+        let text = &line.as_bytes()[..line.len().min(console::LINE_MAX)];
+        console.write_line(&fb, &mut buf, text, if banner { console::RED } else { console::TEXT });
+    }
+    Ok(buf.chunks_exact(4).flat_map(|pixel| [pixel[0], pixel[1], pixel[2]]).collect())
+}
+
+/// Every pixel of the picture is the pixel of `want`, exactly.
+pub fn check_same(picture: &Picture<'_>, want: &[u8]) -> Result<(), String> {
+    if want.len() != picture.rgb.len() {
+        return Err(format!("the picture has {} bytes, expected {}", picture.rgb.len(), want.len()));
+    }
+    let hex = |c: &[u8]| format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]);
+    let mut differing = picture.rgb.chunks_exact(3).zip(want.chunks_exact(3)).enumerate().filter(|(_, (got, want))| got != want);
+    match differing.next() {
+        None => Ok(()),
+        Some((index, (got, want))) => Err(format!(
+            "{} pixel(s) differ; the first is x={} y={}: {}, expected {}",
+            1 + differing.count(),
+            index % picture.width,
+            index / picture.width,
+            hex(got),
+            hex(want)
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,6 +160,63 @@ mod tests {
 
     fn painted(_x: usize, y: usize) -> [u8; 3] {
         if y < BAND_ROWS { CYAN } else { VOID }
+    }
+
+    const TEXT: [u8; 3] = [0xE9, 0xEE, 0xF5];
+    const RED: [u8; 3] = [0xFF, 0x6B, 0x74];
+
+    fn lines(text: &[&str]) -> Vec<String> {
+        text.iter().map(|line| line.to_string()).collect()
+    }
+
+    /// The colours in the pixel rows `rows` of a 64-pixel-wide picture.
+    fn colours(rgb: &[u8], rows: std::ops::Range<usize>) -> Vec<[u8; 3]> {
+        let mut found: Vec<[u8; 3]> =
+            rgb[rows.start * 64 * 3..rows.end * 64 * 3].chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
+        found.sort_unstable();
+        found.dedup();
+        found
+    }
+
+    #[test]
+    fn a_console_without_lines_is_the_painted_screen() {
+        let rgb = render_console(64, 64, &[]).unwrap();
+        assert_eq!(check_fill(&Picture { width: 64, height: 64, rgb: &rgb }), Ok(()));
+    }
+
+    #[test]
+    fn lines_are_text_until_the_banner_and_red_from_it() {
+        // Six rows of eight columns: the banner's first line takes three.
+        let rgb = render_console(64, 112, &lines(&["SK:A", "SK:KERNEL:PANIC_BEGIN", "SK:B"])).unwrap();
+        assert_eq!(colours(&rgb, 0..8), [CYAN]);
+        assert_eq!(colours(&rgb, 8..16), [VOID]);
+        assert_eq!(colours(&rgb, 16..32), [VOID, TEXT]);
+        for row in 2..6 {
+            assert_eq!(colours(&rgb, row * 16..row * 16 + 16), [VOID, RED], "row {row}");
+        }
+        assert_eq!(colours(&rgb, 96..112), [VOID]);
+    }
+
+    #[test]
+    fn a_screen_too_small_for_text_is_refused() {
+        assert!(render_console(64, 20, &[]).unwrap_err().contains("no room"));
+    }
+
+    #[test]
+    fn the_same_picture_passes_and_one_wrong_pixel_is_named() {
+        let want = render_console(64, 64, &lines(&["SK:A"])).unwrap();
+        let mut got = want.clone();
+        assert_eq!(check_same(&Picture { width: 64, height: 64, rgb: &got }, &want), Ok(()));
+        got[(20 * 64 + 5) * 3] ^= 0xFF;
+        got[(40 * 64 + 9) * 3] ^= 0xFF;
+        let why = check_same(&Picture { width: 64, height: 64, rgb: &got }, &want).unwrap_err();
+        assert!(why.starts_with("2 pixel(s) differ; the first is x=5 y=20: "), "{why}");
+    }
+
+    #[test]
+    fn a_picture_of_another_size_fails() {
+        let want = render_console(64, 64, &[]).unwrap();
+        assert!(check_same(&Picture { width: 64, height: 63, rgb: &want[..64 * 63 * 3] }, &want).is_err());
     }
 
     #[test]

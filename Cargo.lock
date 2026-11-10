@@ -171,6 +171,7 @@ name = "sk-kcore"
 version = "0.1.0"
 dependencies = [
  "stillkey-abi",
+ "stillkey-bootinfo",
 ]
 
 [[package]]
@@ -304,5 +305,7 @@ dependencies = [
  "sha2",
  "sk-bootfs",
  "sk-elf",
+ "sk-kcore",
  "stillkey-abi",
+ "stillkey-bootinfo",
 ]

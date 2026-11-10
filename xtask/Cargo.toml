@@ -9,4 +9,6 @@ publish = false
 sha2 = { workspace = true }
 sk-bootfs = { workspace = true, features = ["std"] }
 sk-elf = { workspace = true }
+sk-kcore = { workspace = true }
 stillkey-abi = { workspace = true }
+stillkey-bootinfo = { workspace = true }

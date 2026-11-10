@@ -8,3 +8,4 @@ bin/ticker | program:ticker | ticker | Ticker | app | 0 | -
 bin/faulter | program:faulter | faulter | Faulter | app | 0 | -
 bin/spinner | program:spinner | spinner | Spinner | app | 0 | -
 bin/inspector | program:inspector | inspector | Inspector | system | 0 | -
+licenses/spleen.txt | file:assets/spleen-LICENSE | spleen-license | Spleen licence | app | 0 | -

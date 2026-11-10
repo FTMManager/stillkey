@@ -5,8 +5,10 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod account;
+pub mod console;
 pub mod crash;
 pub mod fault;
+pub mod font;
 pub mod frames;
 pub mod handles;
 pub mod heap;

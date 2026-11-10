@@ -9,6 +9,7 @@ extern crate alloc;
 mod arch;
 mod bootcheck;
 mod fb;
+mod fbcon;
 mod heap;
 mod log;
 mod lowmap;

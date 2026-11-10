@@ -202,6 +202,7 @@ extern "C" fn isr_dispatch(frame: &mut TrapFrame) {
 /// where. The registers go to the serial log only (docs/10 section 8.2).
 fn fatal(frame: &TrapFrame) -> ! {
     let address = if frame.vector == u64::from(x86::VECTOR_PAGE_FAULT) { arch::read_cr2() } else { 0 };
+    log::banner();
     log!("SK:KERNEL:PANIC_BEGIN");
     log!(
         "SK:KERNEL:PANIC exception vector={} error={:#x} rip={:#x} addr={:#x} cs={:#x}",

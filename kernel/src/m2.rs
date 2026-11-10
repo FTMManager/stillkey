@@ -11,7 +11,7 @@ use stillkey_bootinfo::{Accepted, DIRECT_MAP_BASE};
 
 use crate::arch::{self, Global};
 use crate::log::Escaped;
-use crate::{has_option, log, phys, proc, sched, tables, timer, virt};
+use crate::{fbcon, has_option, log, phys, proc, sched, tables, timer, virt};
 
 /// A program of a scenario: its path in BOOTFS.IMG, and whether it gets the
 /// handle that reads the system's diagnostics.
@@ -134,6 +134,15 @@ extern "C" fn on_own_tables() -> ! {
     let released = virt::release_loader_memory(info);
     log!("SK:KERNEL:FRAMES released={} free={}", released, phys::free_count());
     log!("SK:KERNEL:PAGING_AUDIT pages={} wx=0 user=0", virt::audit());
+
+    // ---- Step 13: the log on the screen, from the next line on ----
+    match info.framebuffer().and_then(|screen| fbcon::init(&screen)) {
+        Some((cols, rows)) => {
+            log!("SK:KERNEL:FBCON on cols={} rows={}", cols, rows);
+            fbcon::start();
+        }
+        None => log!("SK:KERNEL:FBCON off"),
+    }
 
     // ---- Step 14: self-test, if selected ----
     selftest(info.cmdline());
