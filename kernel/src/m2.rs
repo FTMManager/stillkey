@@ -1,17 +1,17 @@
-//! The boot steps of Milestone 2 (docs/10 section 7), as far as checkpoint 1
-//! goes (section 11.1): descriptor tables, control registers, the frame
-//! allocator, the timer, BOOTFS.IMG and one program in ring 3.
+//! The boot steps of Milestone 2 (docs/10 section 7).
 //!
-//! Not yet: the kernel's own page tables and stacks, the heap, the console,
-//! the scheduler, and faults charged to a process.
+//! Steps 9 to 12 run on the loader's tables and stack. The rest runs on the
+//! kernel's own, where nothing of the first part's stack exists any more.
 
 use core::slice;
 
+use sk_kcore::paging::ADDRESS;
 use sk_kcore::x86;
 use stillkey_bootinfo::{Accepted, DIRECT_MAP_BASE};
 
+use crate::arch::{self, Global};
 use crate::log::Escaped;
-use crate::{arch, log, phys, tables, timer, user};
+use crate::{has_option, log, phys, tables, timer, user, virt};
 
 /// A scenario: its name and the programs it starts, by path in BOOTFS.IMG.
 type Scenario = (&'static [u8], &'static [&'static str]);
@@ -32,14 +32,22 @@ fn scenario_of(cmdline: &[u8]) -> Scenario {
         .unwrap_or(SCENARIOS[0])
 }
 
-pub fn run(info: &Accepted<'static>) -> ! {
-    let h = &info.header;
+/// What the second part needs from the first. The handoff block itself is
+/// loader memory that stays reserved and mapped.
+struct Carried {
+    info: Accepted<'static>,
+    direct_map_regions: u64,
+    stack_top: u64,
+}
 
+static CARRIED: Global<Option<Carried>> = Global::new(None);
+
+pub fn run(info: &Accepted<'static>) -> ! {
     // ---- Step 9: descriptor tables and a gate for every vector ----
-    tables::init(h.boot_stack.virt_top);
+    tables::init(info.header.boot_stack.virt_top);
     log!("SK:KERNEL:ARCH gdt={} idt={} ist={}", x86::GDT_SLOTS, x86::IDT_GATES, x86::IST_STACKS);
 
-    // ---- Step 10: control registers ----
+    // ---- Step 10: control registers; the 8259 pair remapped and masked ----
     let features = arch::features();
     let cpu = arch::harden(&features);
     if cpu.smap {
@@ -55,13 +63,78 @@ pub fn run(info: &Accepted<'static>) -> ! {
         u8::from(features.tsc_invariant)
     );
     assert!(cpu.wp && cpu.nxe, "write protection and no-execute must be on");
+    timer::init_pic();
 
     // ---- Step 11: the frame allocator ----
     let frames = phys::init(info);
     log!("SK:KERNEL:FRAMES total={} free={} bitmap_pages={}", frames.total, frames.free, frames.bitmap_pages);
 
-    // ---- Steps 14-15: interrupt controllers and the tick, still masked ----
-    timer::init_pic();
+    // ---- Step 12: the kernel's own tables and stack ----
+    let built = virt::build(info);
+    tables::set_kernel_stack(built.stack_top);
+    // SAFETY: one processor, interrupts off; set once.
+    unsafe {
+        *CARRIED.get() = Some(Carried {
+            info: *info,
+            direct_map_regions: built.direct_map_regions,
+            stack_top: built.stack_top,
+        });
+    }
+    // SAFETY: `build` made the tables and mapped the stack. Everything the
+    // rest of the boot needs was copied into `CARRIED`; `info` and every
+    // other value on the boot stack is not used again.
+    unsafe { virt::enter(built.stack_top, on_own_tables) }
+}
+
+/// A byte of data that is also a `ret` instruction. `test=kexec_data` calls
+/// it: data must not run.
+static RET_IN_DATA: Global<[u8; 16]> = Global::new([0xC3; 16]);
+
+/// Step 14. Each test must end in a page fault taken by the kernel itself.
+fn selftest(cmdline: &[u8]) {
+    if has_option(cmdline, b"test=kwrite_text") {
+        let addr = virt::text_start();
+        log!("SK:KERNEL:SELFTEST name=kwrite_text addr={:#x}", addr);
+        // SAFETY: none is claimed: the write must fault, because the
+        // kernel's code is mapped read-only and `CR0.WP` is set.
+        unsafe { (addr as *mut u8).write_volatile(0x90) };
+        panic!("the kernel wrote to its own code");
+    }
+    if has_option(cmdline, b"test=kexec_data") {
+        let addr = RET_IN_DATA.get() as u64;
+        log!("SK:KERNEL:SELFTEST name=kexec_data addr={:#x}", addr);
+        // SAFETY: none is claimed: the call must fault, because data is
+        // mapped no-execute and `EFER.NXE` is set.
+        let call: extern "C" fn() = unsafe { core::mem::transmute(addr) };
+        call();
+        panic!("the kernel executed its own data");
+    }
+}
+
+extern "C" fn on_own_tables() -> ! {
+    // SAFETY: set by `run`; one processor, interrupts off. The reference is
+    // to a static and nothing writes it again.
+    let carried = unsafe { (*CARRIED.get()).as_ref() }.expect("nothing was carried over");
+    let info = &carried.info;
+    let root = arch::read_cr3() & ADDRESS;
+    assert!(root == virt::kernel_space().root, "not on the kernel's own tables");
+    log!(
+        "SK:KERNEL:PAGING root={:#x} tables={} direct_map_regions={}",
+        root,
+        virt::table_pages(),
+        carried.direct_map_regions
+    );
+    let released = virt::release_loader_memory(info);
+    log!("SK:KERNEL:FRAMES released={} free={}", released, phys::free_count());
+    log!("SK:KERNEL:PAGING_AUDIT pages={} wx=0 user=0", virt::audit());
+
+    // ---- Step 14: self-test, if selected ----
+    selftest(info.cmdline());
+
+    // ---- Step 15: the kernel half gets its final top level ----
+    log!("SK:KERNEL:KSPACE sealed tables={}", virt::seal());
+
+    // ---- Steps 16-17: the local APIC and the tick, still masked ----
     let mode = timer::init_apic();
     log!("SK:KERNEL:APIC mode={} lint0=extint", mode);
     timer::init_pit();
@@ -89,13 +162,15 @@ pub fn run(info: &Accepted<'static>) -> ! {
     let (scenario, programs) = scenario_of(info.cmdline());
     log!("SK:KERNEL:SCENARIO name={} programs={}", Escaped(scenario), programs.len());
 
-    // Checkpoint 1 runs the first program only, on the loader's tables.
-    user::init(arch::read_cr3() & sk_kcore::paging::ADDRESS, h.boot_stack.virt_top);
+    user::init(root, carried.stack_top);
     let path = programs[0];
     let Some(entry) = image.find(path) else {
         panic!("{path} is not in BOOTFS.IMG");
     };
     let frame = user::spawn(1, &entry, image.data(&entry));
+
+    // The mappings made since step 12 obey the same rules.
+    virt::audit();
 
     // ---- Step 20: the tick, and the first program ----
     timer::start();

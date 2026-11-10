@@ -1,10 +1,12 @@
-//! Four-level page tables with 4 KiB pages.
+//! Four-level page tables with 4 KiB and 2 MiB pages.
 //!
 //! The code reads and writes tables only through [`PhysMem`], so the kernel
 //! runs it over the direct map and the host tests run it over plain memory.
 
 pub const PAGE: u64 = 4096;
 pub const ENTRIES: usize = 512;
+/// The size of a page mapped by a second-level entry.
+pub const LARGE_PAGE: u64 = 2 << 20;
 
 pub const PRESENT: u64 = 1 << 0;
 pub const WRITABLE: u64 = 1 << 1;
@@ -202,6 +204,96 @@ impl Space {
         None
     }
 
+    /// Maps 2 MiB with one entry of the second level. Both addresses are
+    /// multiples of 2 MiB.
+    pub fn map_2m(
+        &self,
+        mem: &mut impl PhysMem,
+        alloc: &mut dyn FnMut() -> Option<u64>,
+        virt: u64,
+        phys: u64,
+        flags: Flags,
+    ) -> Result<(), MapError> {
+        if !is_canonical(virt) {
+            return Err(MapError::NotCanonical);
+        }
+        if virt % LARGE_PAGE != 0 || phys % LARGE_PAGE != 0 || phys & !ADDRESS != 0 {
+            return Err(MapError::Unaligned);
+        }
+        let link = PRESENT | WRITABLE | if virt < USER_HALF_END { USER } else { 0 };
+        let mut table = self.root;
+        for level in [4, 3] {
+            let entry = mem.table(table)[index(virt, level)];
+            table = if entry & PRESENT == 0 {
+                let new = alloc().ok_or(MapError::NoMemory)?;
+                mem.table(new).fill(0);
+                mem.table(table)[index(virt, level)] = new | link;
+                new
+            } else if entry & HUGE != 0 {
+                return Err(MapError::AlreadyMapped);
+            } else {
+                entry & ADDRESS
+            };
+        }
+        let slot = &mut mem.table(table)[index(virt, 2)];
+        if *slot & PRESENT != 0 {
+            return Err(MapError::AlreadyMapped);
+        }
+        *slot = phys
+            | PRESENT
+            | HUGE
+            | if flags.writable { WRITABLE } else { 0 }
+            | if flags.user { USER } else { 0 }
+            | if flags.cache_disable { CACHE_DISABLE } else { 0 }
+            | if flags.no_execute { NO_EXECUTE } else { 0 };
+        Ok(())
+    }
+
+    /// Gives every upper top-level entry that is still empty a zeroed table,
+    /// and returns how many it added. After this no kernel mapping changes a
+    /// top-level entry, so every address space made with
+    /// [`Space::with_kernel_half`] sees every later kernel mapping
+    /// (docs/10 section 7, step 15).
+    pub fn fill_kernel_half(
+        &self,
+        mem: &mut impl PhysMem,
+        alloc: &mut dyn FnMut() -> Option<u64>,
+    ) -> Result<u64, MapError> {
+        let mut added = 0;
+        for slot in ENTRIES / 2..ENTRIES {
+            if mem.table(self.root)[slot] & PRESENT == 0 {
+                let new = alloc().ok_or(MapError::NoMemory)?;
+                mem.table(new).fill(0);
+                mem.table(self.root)[slot] = new | PRESENT | WRITABLE;
+                added += 1;
+            }
+        }
+        Ok(added)
+    }
+
+    /// Calls `each` for every mapped page of the upper half, in address
+    /// order, with its first address and what all levels together allow.
+    /// `Mapping::phys` is the first byte of the page.
+    pub fn walk_kernel_half(&self, mem: &mut impl PhysMem, each: &mut dyn FnMut(u64, Mapping)) {
+        for slot in ENTRIES / 2..ENTRIES {
+            let entry = mem.table(self.root)[slot];
+            if entry & PRESENT != 0 {
+                let base = 0xFFFF_0000_0000_0000 | (slot as u64) << 39;
+                let inherited = Inherited {
+                    writable: entry & WRITABLE != 0,
+                    user: entry & USER != 0,
+                    no_execute: entry & NO_EXECUTE != 0,
+                };
+                walk_table(mem, entry & ADDRESS, 3, base, inherited, each);
+            }
+        }
+    }
+
+    /// How many upper top-level entries are present.
+    pub fn kernel_top_entries(&self, mem: &mut impl PhysMem) -> u64 {
+        mem.table(self.root)[ENTRIES / 2..].iter().filter(|&&entry| entry & PRESENT != 0).count() as u64
+    }
+
     /// Empties the lower half: every 4 KiB page and every table below the
     /// top-level table goes to `release`, and the 256 lower entries of the
     /// top-level table become zero. The upper half is not read.
@@ -219,6 +311,51 @@ impl Space {
             }
         }
         freed
+    }
+}
+
+/// What the levels above a table allow.
+#[derive(Clone, Copy)]
+struct Inherited {
+    writable: bool,
+    user: bool,
+    no_execute: bool,
+}
+
+fn walk_table(
+    mem: &mut impl PhysMem,
+    table: u64,
+    level: u32,
+    base: u64,
+    above: Inherited,
+    each: &mut dyn FnMut(u64, Mapping),
+) {
+    for slot in 0..ENTRIES {
+        let entry = mem.table(table)[slot];
+        if entry & PRESENT == 0 {
+            continue;
+        }
+        let page_size = PAGE << (9 * (level - 1));
+        let virt = base | slot as u64 * page_size;
+        let here = Inherited {
+            writable: above.writable && entry & WRITABLE != 0,
+            user: above.user && entry & USER != 0,
+            no_execute: above.no_execute || entry & NO_EXECUTE != 0,
+        };
+        if level == 1 || entry & HUGE != 0 {
+            each(
+                virt,
+                Mapping {
+                    phys: entry & ADDRESS & !(page_size - 1),
+                    page_size,
+                    writable: here.writable,
+                    user: here.user,
+                    no_execute: here.no_execute,
+                },
+            );
+        } else {
+            walk_table(mem, entry & ADDRESS, level - 1, virt, here, each);
+        }
     }
 }
 
@@ -433,5 +570,142 @@ mod tests {
         assert_eq!(space.translate(&mut mem, 0x40_0000), None);
         // A second call finds nothing.
         assert_eq!(space.destroy_user_half(&mut mem, &mut |_| panic!("nothing is left")), Freed::default());
+    }
+}
+
+#[cfg(test)]
+mod kernel_half_tests {
+    use super::*;
+    use crate::testmem::{Frames, Memory};
+
+    const KERNEL_RW: Flags = Flags { writable: true, user: false, no_execute: true, cache_disable: false };
+    const KERNEL_RX: Flags = Flags { writable: false, user: false, no_execute: false, cache_disable: false };
+    const DIRECT: u64 = 0xFFFF_8000_0000_0000;
+    const TEXT: u64 = 0xFFFF_FFFF_8000_0000;
+
+    fn empty(frames: &mut Frames) -> Space {
+        Space { root: frames.take().unwrap() }
+    }
+
+    #[test]
+    fn a_large_page_translates_with_its_flags() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(64));
+        let space = empty(&mut frames);
+        space.map_2m(&mut mem, &mut || frames.take(), DIRECT + 0x20_0000, 0x4020_0000, KERNEL_RW).unwrap();
+        assert_eq!(frames.taken(), 3, "the root and two levels of tables");
+
+        let seen = space.translate(&mut mem, DIRECT + 0x21_2345).unwrap();
+        assert_eq!(
+            seen,
+            Mapping { phys: 0x4021_2345, page_size: LARGE_PAGE, writable: true, user: false, no_execute: true }
+        );
+        assert_eq!(space.translate(&mut mem, DIRECT + 0x1F_FFFF), None);
+        assert_eq!(space.translate(&mut mem, DIRECT + 0x40_0000), None);
+    }
+
+    #[test]
+    fn a_large_page_needs_addresses_on_two_mebibytes() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(64));
+        let space = empty(&mut frames);
+        let mut map = |virt, phys| space.map_2m(&mut mem, &mut || frames.take(), virt, phys, KERNEL_RW);
+        assert_eq!(map(DIRECT + 0x1000, 0x4020_0000), Err(MapError::Unaligned));
+        assert_eq!(map(DIRECT + 0x20_0000, 0x4020_1000), Err(MapError::Unaligned));
+        assert_eq!(map(0x0000_8000_0000_0000, 0x4020_0000), Err(MapError::NotCanonical));
+    }
+
+    #[test]
+    fn large_and_small_pages_do_not_cover_each_other() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(64));
+        let space = empty(&mut frames);
+        space.map_2m(&mut mem, &mut || frames.take(), DIRECT, 0x4000_0000, KERNEL_RW).unwrap();
+        space.map_4k(&mut mem, &mut || frames.take(), DIRECT + 0x20_0000, 0x5000_0000, KERNEL_RW).unwrap();
+
+        let small_in_large = space.map_4k(&mut mem, &mut || frames.take(), DIRECT + 0x3000, 0x5000_1000, KERNEL_RW);
+        assert_eq!(small_in_large, Err(MapError::AlreadyMapped));
+        let large_twice = space.map_2m(&mut mem, &mut || frames.take(), DIRECT, 0x4020_0000, KERNEL_RW);
+        assert_eq!(large_twice, Err(MapError::AlreadyMapped));
+        let large_over_small = space.map_2m(&mut mem, &mut || frames.take(), DIRECT + 0x20_0000, 0x4020_0000, KERNEL_RW);
+        assert_eq!(large_over_small, Err(MapError::AlreadyMapped));
+        assert_eq!(space.translate(&mut mem, DIRECT).unwrap().phys, 0x4000_0000);
+        assert_eq!(space.translate(&mut mem, DIRECT + 0x20_0000).unwrap().phys, 0x5000_0000);
+    }
+
+    #[test]
+    fn a_filled_kernel_half_never_changes_at_the_top() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(600));
+        let space = empty(&mut frames);
+        space.map_4k(&mut mem, &mut || frames.take(), TEXT, 0x10_0000, KERNEL_RX).unwrap();
+        space.map_2m(&mut mem, &mut || frames.take(), DIRECT, 0x4000_0000, KERNEL_RW).unwrap();
+        assert_eq!(space.kernel_top_entries(&mut mem), 2);
+
+        let added = space.fill_kernel_half(&mut mem, &mut || frames.take()).unwrap();
+        assert_eq!(added, 254);
+        assert_eq!(space.kernel_top_entries(&mut mem), 256);
+        let top = *mem.table(space.root);
+        assert!(top[..256].iter().all(|&entry| entry == 0), "the lower half stays empty");
+        assert!(top[256..].iter().all(|&entry| entry & PRESENT != 0 && entry & USER == 0));
+
+        // Mappings in windows that were empty before: the top level stays.
+        for virt in [0xFFFF_C000_0000_0000u64, 0xFFFF_D000_0010_0000, 0xFFFF_F000_0000_0000] {
+            space.map_4k(&mut mem, &mut || frames.take(), virt, 0x20_0000, KERNEL_RW).unwrap();
+            assert!(space.translate(&mut mem, virt).is_some());
+        }
+        assert_eq!(*mem.table(space.root), top);
+        assert_eq!(space.fill_kernel_half(&mut mem, &mut || frames.take()), Ok(0));
+    }
+
+    #[test]
+    fn filling_without_memory_is_an_error() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(10));
+        let space = empty(&mut frames);
+        assert_eq!(space.fill_kernel_half(&mut mem, &mut || frames.take()), Err(MapError::NoMemory));
+    }
+
+    #[test]
+    fn the_walk_reports_every_kernel_page_and_no_other() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(64));
+        let space = empty(&mut frames);
+        let user = Flags { writable: true, user: true, no_execute: true, cache_disable: false };
+        space.map_4k(&mut mem, &mut || frames.take(), 0x40_0000, 0x77_7000, user).unwrap();
+        space.map_2m(&mut mem, &mut || frames.take(), DIRECT + 0x20_0000, 0x4020_0000, KERNEL_RW).unwrap();
+        space.map_4k(&mut mem, &mut || frames.take(), TEXT, 0x10_0000, KERNEL_RX).unwrap();
+        space.map_4k(&mut mem, &mut || frames.take(), TEXT + 0x1000, 0x10_1000, KERNEL_RW).unwrap();
+
+        let mut seen = Vec::new();
+        space.walk_kernel_half(&mut mem, &mut |virt, mapping| seen.push((virt, mapping)));
+        let page = |phys, page_size, writable, no_execute| Mapping { phys, page_size, writable, user: false, no_execute };
+        assert_eq!(
+            seen,
+            [
+                (DIRECT + 0x20_0000, page(0x4020_0000, LARGE_PAGE, true, true)),
+                (TEXT, page(0x10_0000, PAGE, false, false)),
+                (TEXT + 0x1000, page(0x10_1000, PAGE, true, true)),
+            ]
+        );
+        // The walk and the translation agree, page by page.
+        for (virt, mapping) in seen {
+            assert_eq!(space.translate(&mut mem, virt), Some(mapping));
+        }
+    }
+
+    #[test]
+    fn the_walk_combines_the_levels() {
+        let (mut mem, mut frames) = (Memory::default(), Frames::new(64));
+        let space = empty(&mut frames);
+        space.map_4k(&mut mem, &mut || frames.take(), TEXT, 0x10_0000, KERNEL_RW).unwrap();
+        // A writable last level under a read-only, no-execute top level.
+        let top = &mut mem.table(space.root)[511];
+        *top = (*top & !WRITABLE) | NO_EXECUTE;
+        // A page a level above claims is open to ring 3 stays closed.
+        let third = mem.table(space.root)[511] & ADDRESS;
+        mem.table(third)[510] |= USER;
+
+        let mut seen = Vec::new();
+        space.walk_kernel_half(&mut mem, &mut |virt, mapping| seen.push((virt, mapping)));
+        assert_eq!(
+            seen,
+            [(TEXT, Mapping { phys: 0x10_0000, page_size: PAGE, writable: false, user: false, no_execute: true })]
+        );
+        assert_eq!(space.translate(&mut mem, TEXT), Some(seen[0].1));
     }
 }

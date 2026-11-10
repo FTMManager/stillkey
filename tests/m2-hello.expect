@@ -14,6 +14,10 @@ SK:KERNEL:M1_OK
 SK:KERNEL:ARCH gdt=7 idt=256 ist=3
 SK:KERNEL:CPU wp=1 nxe=1 smep=
 SK:KERNEL:FRAMES total=
+SK:KERNEL:PAGING root=
+SK:KERNEL:FRAMES released=
+SK:KERNEL:PAGING_AUDIT pages=
+SK:KERNEL:KSPACE sealed tables=256
 SK:KERNEL:APIC mode=
 SK:KERNEL:TIMER hz=100 clock=ticks
 SK:KERNEL:BOOTFS entries=1 bytes=

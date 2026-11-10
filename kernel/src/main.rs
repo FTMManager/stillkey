@@ -17,6 +17,7 @@ mod qemu;
 mod tables;
 mod timer;
 mod user;
+mod virt;
 
 use core::arch::asm;
 
@@ -55,7 +56,7 @@ pub extern "sysv64" fn _start(block: *const u8, block_len: u64) -> ! {
     }
 }
 
-fn has_option(cmdline: &[u8], option: &[u8]) -> bool {
+pub fn has_option(cmdline: &[u8], option: &[u8]) -> bool {
     cmdline.split(|&b| b == b' ').any(|word| word == option)
 }
 

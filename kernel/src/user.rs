@@ -10,7 +10,7 @@ use core::ptr;
 
 use sk_bootfs::Entry;
 use sk_kcore::logfmt::AppText;
-use sk_kcore::paging::{ADDRESS, ENTRIES, Flags, PAGE, PhysMem, Space};
+use sk_kcore::paging::{ADDRESS, Flags, PAGE, Space};
 use sk_kcore::usercopy;
 use sk_kcore::x86::TrapFrame;
 use stillkey_abi::{
@@ -19,20 +19,8 @@ use stillkey_abi::{
 };
 
 use crate::arch::{self, Global};
+use crate::virt::DirectMap;
 use crate::{log, phys, tables, timer};
-
-/// Page tables, reached through the direct map.
-pub struct DirectMap;
-
-impl PhysMem for DirectMap {
-    fn table(&mut self, phys: u64) -> &mut [u64; ENTRIES] {
-        // SAFETY: the callers pass addresses of page-table frames: the root
-        // the loader built, or frames this kernel allocated as tables. The
-        // direct map covers them, and one processor with interrupts off
-        // means nothing else uses the table while the reference lives.
-        unsafe { &mut *phys::direct(phys).cast::<[u64; ENTRIES]>() }
-    }
-}
 
 struct Process {
     pid: u32,

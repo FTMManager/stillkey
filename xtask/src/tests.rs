@@ -13,7 +13,8 @@ use crate::util::{cache_dir, sha256_hex, workspace_root};
 use crate::{check, image, screen};
 
 pub const NAMES: &str =
-    "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey, m1 or m2-hello";
+    "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey, m1, \
+     m2-hello, m2-kwrite or m2-kexec";
 
 pub struct TestOpts {
     pub release: bool,
@@ -47,6 +48,8 @@ pub fn run(name: &str, o: &TestOpts) -> Result<(), String> {
         "m1-serial" => boots(&[serial_boot]),
         "m1-stalekey" => boots(&[stalekey_boot]),
         "m2-hello" => boots(&[hello_boot]),
+        "m2-kwrite" => boots(&[kwrite_boot]),
+        "m2-kexec" => boots(&[kexec_boot]),
         "m1" => check::require_present().and_then(|_| {
             host_tests()?;
             let art = build::build(o.release)?;
@@ -357,8 +360,19 @@ fn boot_vm(
     name: &str,
     cmdline: &str,
 ) -> Result<(Outcome, PathBuf), String> {
+    boot_image(o, art, name, cmdline, false)
+}
+
+/// Boots an image, with or without `BOOTFS.IMG`, until the guest ends the VM.
+fn boot_image(
+    o: &TestOpts,
+    art: &Artifacts,
+    name: &str,
+    cmdline: &str,
+    with_bootfs: bool,
+) -> Result<(Outcome, PathBuf), String> {
     let dir = cache_dir().join(name);
-    image::make(&dir, art, Some(cmdline), false)?;
+    image::make(&dir, art, Some(cmdline), with_bootfs)?;
     let status = qemu::run(&Vm {
         dir: &dir,
         accel: o.accel,
@@ -448,13 +462,7 @@ fn hello_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
             return Err(format!("no line `{digest}`"));
         }
 
-        // The allocator accounts for every page the handoff calls usable.
-        let usable = number(lines, "SK:KERNEL:MEM usable_after_reserve", "pages")?;
-        let free = number(lines, "SK:KERNEL:FRAMES", "free")?;
-        let bitmap = number(lines, "SK:KERNEL:FRAMES", "bitmap_pages")?;
-        if free + bitmap != usable {
-            return Err(format!("free {free} + bitmap {bitmap} is not usable_after_reserve {usable}"));
-        }
+        frames_add_up(lines)?;
 
         // Everything the program had came back: its image pages, sixteen
         // stack pages, and seven page tables (the top level, and three
@@ -473,6 +481,59 @@ fn hello_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     })();
     report(o, name, round, &outcome, &kept, &verdict);
     verdict
+}
+
+/// `m2-kwrite` and `m2-kexec` (docs/10 sections 8.6 and 10): the kernel
+/// writes to its own code, or calls its own data. The processor must refuse
+/// with a page fault whose error code says "the page is there, and this
+/// access is not allowed", at the address the kernel announced.
+fn kernel_fault_boot(o: &TestOpts, art: &Artifacts, round: u32, name: &str, selftest: &str) -> Result<(), String> {
+    let cmdline = format!("qemu_exit=on test={selftest}");
+    let (outcome, kept) = boot_image(o, art, name, &cmdline, true)?;
+    let lines = &outcome.lines;
+    let verdict = (|| {
+        check_expect(lines, name)?;
+        expect_status(&outcome, 37)?;
+        frames_add_up(lines)?;
+        let announced = hex_field(lines, "SK:KERNEL:SELFTEST", "addr")?;
+        let banner = "SK:KERNEL:PANIC exception";
+        let (error, addr, rip) =
+            (hex_field(lines, banner, "error")?, hex_field(lines, banner, "addr")?, hex_field(lines, banner, "rip")?);
+        if addr != announced {
+            return Err(format!("the fault is at {addr:#x}, the self-test announced {announced:#x}"));
+        }
+        // Bit 0: the page is present. Bit 1: a write. Bit 2: from ring 3.
+        // Bit 4: an instruction fetch.
+        let (want, mask) = if selftest == "kwrite_text" { (0b00011, 0b00111) } else { (0b10001, 0b10101) };
+        if error & mask != want {
+            return Err(format!("error code {error:#x} is not that of a refused {selftest}"));
+        }
+        if selftest == "kexec_data" && rip != announced {
+            return Err(format!("the fetch faulted at rip {rip:#x}, not at {announced:#x}"));
+        }
+        Ok(())
+    })();
+    report(o, name, round, &outcome, &kept, &verdict);
+    verdict
+}
+
+fn kwrite_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
+    kernel_fault_boot(o, art, round, "m2-kwrite", "kwrite_text")
+}
+
+fn kexec_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
+    kernel_fault_boot(o, art, round, "m2-kexec", "kexec_data")
+}
+
+/// The allocator accounts for every page the handoff calls usable.
+fn frames_add_up(lines: &[String]) -> Result<(), String> {
+    let usable = number(lines, "SK:KERNEL:MEM usable_after_reserve", "pages")?;
+    let free = number(lines, "SK:KERNEL:FRAMES", "free")?;
+    let bitmap = number(lines, "SK:KERNEL:FRAMES", "bitmap_pages")?;
+    if free + bitmap != usable {
+        return Err(format!("free {free} + bitmap {bitmap} is not usable_after_reserve {usable}"));
+    }
+    Ok(())
 }
 
 /// The mode in the kernel's `FB_FILLED <w>x<h> format=<f>` line.

@@ -157,6 +157,18 @@ pub fn init(kernel_stack_top: u64) {
     }
 }
 
+/// Sets where the processor puts the stack pointer when an interrupt
+/// arrives in ring 3: the top of the running thread's kernel stack.
+pub fn set_kernel_stack(top: u64) {
+    // SAFETY: one processor, interrupts off. The processor reads the task
+    // state segment only when it takes an interrupt.
+    unsafe {
+        let stacks = IST.get() as u64;
+        let ist = core::array::from_fn(|i| stacks + ((i + 1) * IST_SIZE) as u64);
+        TSS.get().write(Tss::with_stacks(top, ist));
+    }
+}
+
 /// Tells the entry code that `CR4.SMAP` is set.
 pub fn smap_enabled() {
     SMAP_ON.store(1, Ordering::Relaxed);

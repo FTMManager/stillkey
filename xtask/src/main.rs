@@ -22,7 +22,7 @@ usage: cargo xtask <command>
   build  [--release]
   image  [--release] [--cmdline \"<boot options>\"]
   run    [--release] [--accel kvm|tcg] [--cmdline \"<boot options>\"] [--gui] [--gdb] [--monitor] [--trace]
-  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello>
+  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2-kwrite|m2-kexec>
          [--release] [--repeat N] [--accel kvm|tcg] [--timeout SECONDS]
   clean";
 

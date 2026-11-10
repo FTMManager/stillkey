@@ -8,7 +8,6 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use stillkey_abi::TICK_NS;
-use stillkey_bootinfo::DIRECT_MAP_BASE;
 
 use crate::arch::{self, Global, inb, io_wait, outb};
 use crate::log;
@@ -106,13 +105,11 @@ pub fn init_apic() -> &'static str {
     let base = unsafe { arch::rdmsr(APIC_BASE_MSR) };
     assert!(base & APIC_BASE_ENABLED != 0, "the firmware left the local APIC disabled");
     let x2apic = base & APIC_BASE_X2APIC != 0;
-    // SAFETY: one processor, interrupts off. In memory mode the registers
-    // are below 4 GiB, which the loader's direct map covers whatever the
-    // memory map says; the kernel's own device mapping replaces this at the
-    // next checkpoint.
-    unsafe {
-        *APIC_MEMORY.get() = (!x2apic).then_some(DIRECT_MAP_BASE + (base & APIC_BASE_ADDRESS));
-    }
+    // In memory mode the registers get a page of the device window: the
+    // direct map holds memory only.
+    let memory = (!x2apic).then(|| crate::virt::map_mmio(base & APIC_BASE_ADDRESS));
+    // SAFETY: one processor, interrupts off.
+    unsafe { *APIC_MEMORY.get() = memory };
 
     let entries = apic_read(APIC_VERSION) >> 16 & 0xFF; // index of the last LVT entry
     apic_write(APIC_SVR, 0x100 | u32::from(sk_kcore::x86::VECTOR_APIC_SPURIOUS));
