@@ -1,6 +1,6 @@
 SK:LOADER:START version=0.1.0 profile=
 SK:LOADER:IMAGE base=0x
-SK:LOADER:CMDLINE len=23
+SK:LOADER:CMDLINE len=31
 SK:LOADER:KERNEL_FILE size=
 SK:LOADER:KERNEL_SHA256 
 SK:LOADER:KERNEL_VALID entry=0xffffffff80
@@ -15,7 +15,7 @@ SK:LOADER:CR4 pge_was=
 SK:LOADER:JUMP entry=0xffffffff80
 SK:KERNEL:START version=0.1.0 profile=
 SK:KERNEL:BOOTINFO_OK version=1.0 size=
-SK:KERNEL:CMDLINE "qemu_exit=on test=panic"
+SK:KERNEL:CMDLINE "qemu_exit=on stop=m1 test=panic"
 SK:KERNEL:CR4 pge=0
 SK:KERNEL:IMAGE sha256=
 SK:KERNEL:MEM kind=usable regions=

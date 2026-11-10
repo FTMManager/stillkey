@@ -42,6 +42,8 @@ pub const BLOCK_PHYS_LIMIT: u64 = DIRECT_MAP_MIN;
 /// Upper bound on the size of the handoff block.
 pub const MAX_BLOCK: u64 = 16 << 20;
 pub const MAX_CMDLINE: u64 = 1024;
+/// Largest `BOOTFS.IMG` the loader hands over (docs/10 section 5.3).
+pub const MAX_BOOTFS: u64 = 32 << 20;
 pub const MAX_RESERVED: u64 = 32;
 /// Upper bound on the size of a framebuffer: larger than any mode the loader
 /// would be handed, and it bounds the page tables that map it.

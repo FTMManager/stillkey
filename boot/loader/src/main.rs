@@ -102,6 +102,37 @@ fn read_kernel(volume: &mut files::Volume) -> Result<&'static [u8], Stop> {
     Ok(bytes)
 }
 
+/// `BOOTFS.IMG`, if the volume has one: where its bytes are and how many
+/// (docs/10 section 5.3). The loader does not look inside; the kernel does.
+fn read_bootfs(volume: &mut files::Volume) -> Result<Option<(u64, u64)>, Stop> {
+    let (mut file, size) = match volume.open_bootfs() {
+        Ok(Some(opened)) => opened,
+        Ok(None) => {
+            log!("SK:LOADER:BOOTFS none");
+            return Ok(None);
+        }
+        Err(status) => stop!("SK:LOADER:BOOTFS_REJECTED reason=read status={:#x}", status.0),
+    };
+    log!("SK:LOADER:BOOTFS_FILE size={}", size);
+    // Before anything is allocated for the file.
+    if size == 0 || size > bootinfo::MAX_BOOTFS {
+        stop!("SK:LOADER:BOOTFS_REJECTED reason=size");
+    }
+    let Some(phys) = mem::pages_for(size).and_then(mem::alloc_zeroed) else {
+        stop!("SK:LOADER:NO_MEMORY what=bootfs");
+    };
+    // SAFETY: `phys` is a fresh allocation of at least `size` bytes that is
+    // never freed and that nothing else refers to; `size` is at most 32 MiB.
+    let bytes = unsafe { slice::from_raw_parts_mut(phys as *mut u8, size as usize) };
+    if let Err(status) = files::read_exact(&mut file, bytes) {
+        stop!("SK:LOADER:BOOTFS_REJECTED reason=read status={:#x}", status.0);
+    }
+    let mut sha256 = [0u8; 32];
+    sha256.copy_from_slice(&Sha256::digest(&*bytes));
+    log!("SK:LOADER:BOOTFS_SHA256 {}", Hex(&sha256));
+    Ok(Some((phys, size)))
+}
+
 fn run() -> Result<Infallible, Stop> {
     // ---- Step 1: serial, watchdog, CPU checks, own image ----
     log::init();
@@ -123,7 +154,7 @@ fn run() -> Result<Infallible, Stop> {
 
     // ---- Steps 2-3: the command line, then the kernel file ----
     let mut cmdline_buf = [0u8; bootinfo::MAX_CMDLINE as usize];
-    let (cmdline, file) = {
+    let (cmdline, file, bootfs) = {
         let mut volume = match files::Volume::open() {
             Ok(volume) => volume,
             Err(status) => stop!("SK:LOADER:KERNEL_MISSING status={:#x}", status.0),
@@ -139,7 +170,8 @@ fn run() -> Result<Infallible, Stop> {
             let answered = log::recheck();
             log!("SK:LOADER:SERIAL recheck={}", if answered { "ok" } else { "lost" });
         }
-        (cmdline, read_kernel(&mut volume)?)
+        let file = read_kernel(&mut volume)?;
+        (cmdline, file, read_bootfs(&mut volume)?)
         // The volume and every file handle are closed here.
     };
 
@@ -234,6 +266,13 @@ fn run() -> Result<Infallible, Stop> {
 
     // ---- Step 8: the handoff block, complete except for the memory map ----
     let mut reserved = [
+        // BOOTFS.IMG, if there is one; the entry is left out below if not.
+        ReservedRange {
+            base: bootfs.map_or(0, |(base, _)| base),
+            pages: bootfs.map_or(0, |(_, size)| size.div_ceil(PAGE)),
+            purpose: bootinfo::PURPOSE_BOOTFS,
+            _pad: 0,
+        },
         ReservedRange {
             base: loaded.image_phys,
             pages: loaded.image_pages as u64,
@@ -261,6 +300,7 @@ fn run() -> Result<Infallible, Stop> {
             _pad: 0,
         },
     ];
+    let reserved = if bootfs.is_some() { &mut reserved[..] } else { &mut reserved[1..] };
     // The final map may hold more descriptors than the preliminary one.
     let region_cap = preliminary_count + 64;
     let Some(layout) = bootinfo::block_layout(cmdline.len(), reserved.len(), region_cap) else {
@@ -274,8 +314,11 @@ fn run() -> Result<Infallible, Stop> {
     else {
         stop!("SK:LOADER:NO_MEMORY what=bootinfo");
     };
-    reserved[3].base = block_phys;
-    reserved[3].pages = (layout.total_size / PAGE as usize) as u64;
+    let Some(own) = reserved.iter_mut().find(|r| r.purpose == bootinfo::PURPOSE_BOOT_INFO) else {
+        stop!("SK:LOADER:NO_MEMORY what=bootinfo");
+    };
+    own.base = block_phys;
+    own.pages = (layout.total_size / PAGE as usize) as u64;
     reserved.sort_unstable_by_key(|range| range.base);
 
     // SAFETY: a fresh, zeroed allocation of `total_size` bytes that is never
@@ -303,6 +346,9 @@ fn run() -> Result<Infallible, Stop> {
     }
     if rsdp.is_some() {
         flags |= bootinfo::FLAG_ACPI_RSDP_PRESENT;
+    }
+    if bootfs.is_some() {
+        flags |= bootinfo::FLAG_BOOTFS_PRESENT;
     }
     let stack_top = paging::BOOT_STACK_VIRT + bootinfo::BOOT_STACK_SIZE;
     let mut header = BootInfo {
@@ -334,7 +380,9 @@ fn run() -> Result<Infallible, Stop> {
         },
         framebuffer: framebuffer.unwrap_or_default(),
         acpi_rsdp: rsdp.unwrap_or(0),
-        bootfs: Default::default(),
+        bootfs: bootfs
+            .map(|(base, size)| bootinfo::PhysRange { base, size })
+            .unwrap_or_default(),
         exit_attempts: 0,
         uefi_descriptor_size: 0,
     };

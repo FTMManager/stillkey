@@ -1,12 +1,12 @@
 SK:LOADER:START version=0.1.0 profile=
-SK:LOADER:CMDLINE len=21
+SK:LOADER:CMDLINE len=29
 SK:LOADER:EBS_BEGIN
 SK:LOADER:EBS_OK attempts=
 SK:LOADER:CR4 pge_was=1
 SK:LOADER:JUMP entry=0xffffffff80
 SK:KERNEL:START version=0.1.0 profile=
 SK:KERNEL:BOOTINFO_OK version=1.0 size=
-SK:KERNEL:CMDLINE "qemu_exit=on test=pge"
+SK:KERNEL:CMDLINE "qemu_exit=on stop=m1 test=pge"
 SK:KERNEL:CR4 pge=0
 SK:KERNEL:LOWMAP_DROPPED
 SK:KERNEL:M1_OK

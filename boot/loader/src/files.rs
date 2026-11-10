@@ -8,6 +8,7 @@ use uefi::{CStr16, Status, cstr16};
 
 const CMDLINE_PATH: &CStr16 = cstr16!("\\EFI\\STILLKEY\\CMDLINE.TXT");
 const KERNEL_PATH: &CStr16 = cstr16!("\\EFI\\STILLKEY\\KERNEL.ELF");
+const BOOTFS_PATH: &CStr16 = cstr16!("\\EFI\\STILLKEY\\BOOTFS.IMG");
 
 /// The volume the loader was started from. Dropping it closes the root
 /// directory and then the protocol, which must happen before step 9.
@@ -56,14 +57,30 @@ impl Volume {
     /// Opens `KERNEL.ELF` and reports the size `GetInfo` gives for it.
     pub fn open_kernel(&mut self) -> Result<(RegularFile, u64), Status> {
         let mut file = self.open_file(KERNEL_PATH)?;
-        let mut buf = InfoBuf([0; 512]);
-        let info: &mut FileInfo = file.get_info(&mut buf.0).map_err(|e| e.status())?;
-        let size = info.file_size();
+        let size = size_of(&mut file)?;
         Ok((file, size))
+    }
+
+    /// `BOOTFS.IMG` and its size, or `None` if the volume has no such file.
+    pub fn open_bootfs(&mut self) -> Result<Option<(RegularFile, u64)>, Status> {
+        let mut file = match self.open_file(BOOTFS_PATH) {
+            Ok(file) => file,
+            Err(Status::NOT_FOUND) => return Ok(None),
+            Err(status) => return Err(status),
+        };
+        let size = size_of(&mut file)?;
+        Ok(Some((file, size)))
     }
 }
 
 /// Fills `buf` from the file's current position.
+/// The size of an open file, by `GetInfo`.
+fn size_of(file: &mut RegularFile) -> Result<u64, Status> {
+    let mut buf = InfoBuf([0; 512]);
+    let info: &mut FileInfo = file.get_info(&mut buf.0).map_err(|e| e.status())?;
+    Ok(info.file_size())
+}
+
 pub fn read_exact(file: &mut RegularFile, buf: &mut [u8]) -> Result<(), Status> {
     let mut done = 0;
     while done < buf.len() {

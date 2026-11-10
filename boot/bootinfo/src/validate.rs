@@ -31,6 +31,7 @@ pub enum Reject {
     Reserved,
     Cmdline,
     Framebuffer,
+    Bootfs,
 }
 
 impl Reject {
@@ -46,6 +47,7 @@ impl Reject {
             Reject::Reserved => "reserved",
             Reject::Cmdline => "cmdline",
             Reject::Framebuffer => "framebuffer",
+            Reject::Bootfs => "bootfs",
         }
     }
 }
@@ -97,6 +99,12 @@ impl<'a> Accepted<'a> {
     /// [`Framebuffer::is_well_formed`] and overlaps no reserved range.
     pub fn framebuffer(&self) -> Option<Framebuffer> {
         (self.header.flags & FLAG_FRAMEBUFFER_PRESENT != 0).then_some(self.header.framebuffer)
+    }
+
+    /// `BOOTFS.IMG` in memory, if the loader read one. Its pages are one
+    /// reserved range, so they are no page of [`Self::usable_after_reserve`].
+    pub fn bootfs(&self) -> Option<crate::PhysRange> {
+        (self.header.flags & crate::FLAG_BOOTFS_PRESENT != 0).then_some(self.header.bootfs)
     }
 
     /// The number of pages an allocator may take (docs/02 section 7): the
@@ -257,7 +265,30 @@ pub fn validate(block: &[u8], block_phys: u64) -> Result<Accepted<'_>, Reject> {
         check_framebuffer(&header.framebuffer, reserved)?;
     }
 
+    // ---- BOOTFS.IMG ----
+    check_bootfs(&header, reserved)?;
+
     Ok(Accepted { header, regions, reserved, cmdline })
+}
+
+/// With the flag: the image has a page-aligned base that is not zero and a
+/// size of 1 byte to 32 MiB, and exactly one reserved range has the purpose
+/// `bootfs`, which covers exactly the pages of the image. Without the flag no
+/// range has that purpose. `reserved` has passed [`check_reserved`], so the
+/// range lies in loader memory and overlaps no other range.
+fn check_bootfs(header: &BootInfo, reserved: &[u8]) -> Result<(), Reject> {
+    let mut ranges = reserved_in(reserved).filter(|r| r.purpose == crate::PURPOSE_BOOTFS);
+    if header.flags & crate::FLAG_BOOTFS_PRESENT == 0 {
+        return if ranges.next().is_none() { Ok(()) } else { Err(Reject::Bootfs) };
+    }
+    let crate::PhysRange { base, size } = header.bootfs;
+    let well_formed =
+        base != 0 && base % PAGE_SIZE == 0 && size != 0 && size <= crate::MAX_BOOTFS;
+    let covered = match (ranges.next(), ranges.next()) {
+        (Some(range), None) => range.base == base && range.pages == size.div_ceil(PAGE_SIZE),
+        _ => false,
+    };
+    if well_formed && covered { Ok(()) } else { Err(Reject::Bootfs) }
 }
 
 /// The record is well formed, and the pages the loader mapped for the buffer

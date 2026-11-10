@@ -415,7 +415,7 @@ fn filled_mode(lines: &[String]) -> Result<&str, String> {
 /// `m1-boot`: the normal boot ends at the kernel's success marker with status 33.
 fn boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     let name = "m1-boot";
-    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on")?;
+    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on stop=m1")?;
     let lines = &outcome.lines;
     let verdict = (|| {
         check_expect(lines, name)?;
@@ -469,7 +469,7 @@ fn hex_field(lines: &[String], prefix: &str, key: &str) -> Result<u64, String> {
 fn pge_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     const PGE: u64 = 1 << 7;
     let name = "m1-pge";
-    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on test=pge")?;
+    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on stop=m1 test=pge")?;
     let lines = &outcome.lines;
     let verdict = (|| {
         check_expect(lines, name)?;
@@ -498,7 +498,7 @@ fn pge_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
 /// absent, which at boot would silence every loader line.
 fn serial_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     let name = "m1-serial";
-    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on test=serial")?;
+    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on stop=m1 test=serial")?;
     let lines = &outcome.lines;
     let verdict = (|| {
         check_expect(lines, name)?;
@@ -513,7 +513,7 @@ fn serial_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> 
 /// key stale. The loader must fetch the map again and still hand over.
 fn stalekey_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     let name = "m1-stalekey";
-    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on test=stalekey")?;
+    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on stop=m1 test=stalekey")?;
     let lines = &outcome.lines;
     let verdict = (|| {
         check_expect(lines, name)?;
@@ -534,7 +534,7 @@ fn stalekey_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String
 /// `m1-panic`: the deliberate panic prints its banner and ends with status 37.
 fn panic_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     let name = "m1-panic";
-    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on test=panic")?;
+    let (outcome, kept) = boot_vm(o, art, name, "qemu_exit=on stop=m1 test=panic")?;
     let lines = &outcome.lines;
     let verdict = (|| {
         check_expect(lines, name)?;
@@ -583,7 +583,7 @@ fn reject_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> 
             bootfs_sha256: art.bootfs_sha256.clone(),
         };
 
-        let (outcome, kept) = boot_vm(o, &corrupted, &name, "qemu_exit=on")?;
+        let (outcome, kept) = boot_vm(o, &corrupted, &name, "qemu_exit=on stop=m1")?;
         let lines = &outcome.lines;
         let verdict = (|| {
             check_expect(lines, "m1-reject")?;
@@ -612,7 +612,7 @@ fn reject_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> 
 fn screen_boot(o: &TestOpts, art: &Artifacts) -> Result<(), String> {
     let name = "m1-screen";
     let dir = cache_dir().join(name);
-    image::make(&dir, art, None, false)?;
+    image::make(&dir, art, Some("stop=m1"), false)?;
     let ppm = dir.join("screen.ppm");
     let status = qemu::capture_screen(
         &Vm {

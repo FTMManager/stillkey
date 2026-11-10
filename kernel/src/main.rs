@@ -8,6 +8,7 @@ mod bootcheck;
 mod fb;
 mod log;
 mod lowmap;
+mod m2;
 mod memsum;
 mod panic;
 mod qemu;
@@ -107,6 +108,10 @@ fn kmain(info: &Accepted<'static>) -> ! {
     }
 
     log!("SK:KERNEL:M1_OK attempts={}", h.exit_attempts);
-    qemu::exit(qemu::PASS);
-    halt()
+    // `stop=m1`: the boot checkpoint alone, as Milestone 1 accepted it (D-K-11).
+    if has_option(cmdline, b"stop=m1") {
+        qemu::exit(qemu::PASS);
+        halt()
+    }
+    m2::run(info)
 }
