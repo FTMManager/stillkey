@@ -13,22 +13,23 @@ use stillkey_bootinfo::{Accepted, DIRECT_MAP_BASE};
 use crate::log::Escaped;
 use crate::{arch, log, phys, tables, timer, user};
 
-/// The scenario that runs when the command line names none.
-const DEFAULT_SCENARIO: &[u8] = b"m2-hello";
+/// A scenario: its name and the programs it starts, by path in BOOTFS.IMG.
+type Scenario = (&'static [u8], &'static [&'static str]);
 
-/// The programs a scenario starts, by path in BOOTFS.IMG.
-fn programs_of(scenario: &[u8]) -> Option<&'static [&'static str]> {
-    match scenario {
-        b"m2-hello" => Some(&["bin/hello"]),
-        _ => None,
-    }
-}
+/// The scenarios this kernel knows. The first runs when the command line
+/// selects none; from checkpoint 2 that is `m2`.
+const SCENARIOS: &[Scenario] = &[(b"m2-hello", &["bin/hello"])];
 
-fn scenario_of(cmdline: &[u8]) -> &[u8] {
+/// The first `test=` word that names a scenario selects it. Other `test=`
+/// words are for the loader or for the steps before this one and are
+/// ignored here (docs/10 section 6).
+fn scenario_of(cmdline: &[u8]) -> Scenario {
     cmdline
         .split(|&b| b == b' ')
-        .find_map(|word| word.strip_prefix(b"scenario="))
-        .unwrap_or(DEFAULT_SCENARIO)
+        .filter_map(|word| word.strip_prefix(b"test="))
+        .find_map(|name| SCENARIOS.iter().find(|(known, _)| *known == name))
+        .copied()
+        .unwrap_or(SCENARIOS[0])
 }
 
 pub fn run(info: &Accepted<'static>) -> ! {
@@ -85,10 +86,7 @@ pub fn run(info: &Accepted<'static>) -> ! {
     log!("SK:KERNEL:BOOTFS entries={} bytes={}", image.len(), image.size());
 
     // ---- Step 19: the start table ----
-    let scenario = scenario_of(info.cmdline());
-    let Some(programs) = programs_of(scenario) else {
-        panic!("unknown scenario {}", Escaped(scenario));
-    };
+    let (scenario, programs) = scenario_of(info.cmdline());
     log!("SK:KERNEL:SCENARIO name={} programs={}", Escaped(scenario), programs.len());
 
     // Checkpoint 1 runs the first program only, on the loader's tables.

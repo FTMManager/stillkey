@@ -417,7 +417,7 @@ fn number(lines: &[String], prefix: &str, key: &str) -> Result<u64, String> {
 fn hello_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     let name = "m2-hello";
     let dir = cache_dir().join(name);
-    image::make(&dir, art, Some("qemu_exit=on"), true)?;
+    image::make(&dir, art, Some("qemu_exit=on test=m2-hello"), true)?;
     let status = qemu::quit_after(
         &Vm {
             dir: &dir,
