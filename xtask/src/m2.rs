@@ -358,8 +358,10 @@ fn scenario(
         },
         "quit\n",
     );
+    // The harness ends the VM at any moment: the kernel may have been in
+    // the middle of a line, and that line is not part of the run.
     let raw = fs::read(dir.join("serial.log")).unwrap_or_default();
-    let (lines, firmware_lines) = sk_lines(&raw);
+    let (lines, firmware_lines) = sk_lines(follow::whole(&raw));
     let kept = keep_evidence(&dir, name, art, &lines)?;
     let outcome = Outcome { status: *followed.as_ref().unwrap_or(&-1), lines, firmware_lines };
     let lines = &outcome.lines;

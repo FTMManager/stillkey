@@ -18,11 +18,15 @@ pub enum Verdict {
     Failed(String),
 }
 
-/// The whole lines of a serial log that is still being written: the bytes
-/// after the last line end are left for the next look.
+/// A serial log up to its last line end. The bytes after it are a line
+/// that is still being written, or that was cut when the VM was ended.
+pub fn whole(raw: &[u8]) -> &[u8] {
+    &raw[..raw.iter().rposition(|&b| b == b'\n').map_or(0, |at| at + 1)]
+}
+
+/// The whole `SK:` lines of a serial log.
 pub fn whole_lines(raw: &[u8]) -> Vec<String> {
-    let end = raw.iter().rposition(|&b| b == b'\n').map_or(0, |at| at + 1);
-    sk_lines(&raw[..end]).0
+    sk_lines(whole(raw)).0
 }
 
 /// Starts the VM and calls `step` with the `SK:` lines every 50 ms until it
@@ -67,6 +71,13 @@ mod tests {
     fn a_line_that_is_still_being_written_is_left_out() {
         assert_eq!(whole_lines(b"SK:A one\nSK:B tw"), ["SK:A one"]);
         assert_eq!(whole_lines(b"SK:A one\nSK:B two\n"), ["SK:A one", "SK:B two"]);
+    }
+
+    #[test]
+    fn a_log_is_cut_after_its_last_line_end() {
+        assert_eq!(whole(b"SK:A one\r\nSK:APP:OUT pid=3 name=inspector | table cha"), b"SK:A one\r\n");
+        assert_eq!(whole(b"SK:A one\r\n"), b"SK:A one\r\n");
+        assert_eq!(whole(b"SK:A on"), b"");
     }
 
     #[test]
