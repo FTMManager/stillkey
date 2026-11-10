@@ -1,6 +1,7 @@
 //! Stillkey host tool. Run it as `cargo xtask <command>` through
 //! `tools/sk.sh` (WSL) or `tools/sk.ps1` (PowerShell).
 
+mod bootfs;
 mod build;
 mod check;
 mod image;
@@ -78,7 +79,7 @@ fn run_interactive(args: &Args) -> Result<(), String> {
     }
     let art = build::build(args.release)?;
     let dir = util::cache_dir().join("run");
-    image::make(&dir, &art, args.cmdline.as_deref())?;
+    image::make(&dir, &art, args.cmdline.as_deref(), true)?;
     let serial = if args.monitor { Serial::File } else { Serial::Stdio };
     if args.gdb {
         println!("QEMU is stopped and waits for: gdb build/artifacts/{}/KERNEL.ELF -x tools/gdb/kernel.gdb", art.profile);
@@ -125,7 +126,7 @@ fn dispatch(raw: &[String]) -> Result<(), String> {
         "build" => build::build(args.release).map(|_| ()),
         "image" => {
             let art = build::build(args.release)?;
-            let img = image::make(&util::cache_dir().join("image"), &art, args.cmdline.as_deref())?;
+            let img = image::make(&util::cache_dir().join("image"), &art, args.cmdline.as_deref(), true)?;
             println!("{}", img.display());
             Ok(())
         }

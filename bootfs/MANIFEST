@@ -1,0 +1,6 @@
+# What `cargo xtask build` packs into BOOTFS.IMG (docs/10 section 5.2).
+# path | source | name | display name | class | mem_mib | flags
+# source is program:<binary> or file:<path from the workspace root>;
+# class is app or system; mem_mib 0 is the default limit; flags is - or a
+# comma-separated list of critical and display.
+bin/hello | program:hello | hello | Hello | app | 0 | -

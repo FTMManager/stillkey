@@ -1,0 +1,12 @@
+[package]
+name = "sk-kcore"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+stillkey-abi = { workspace = true }

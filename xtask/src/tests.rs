@@ -356,7 +356,7 @@ fn boot_vm(
     cmdline: &str,
 ) -> Result<(Outcome, PathBuf), String> {
     let dir = cache_dir().join(name);
-    image::make(&dir, art, Some(cmdline))?;
+    image::make(&dir, art, Some(cmdline), false)?;
     let status = qemu::run(&Vm {
         dir: &dir,
         accel: o.accel,
@@ -579,6 +579,8 @@ fn reject_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> 
             kernel,
             profile: art.profile,
             kernel_sha256: sha256_hex(&bad),
+            bootfs: art.bootfs.clone(),
+            bootfs_sha256: art.bootfs_sha256.clone(),
         };
 
         let (outcome, kept) = boot_vm(o, &corrupted, &name, "qemu_exit=on")?;
@@ -610,7 +612,7 @@ fn reject_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> 
 fn screen_boot(o: &TestOpts, art: &Artifacts) -> Result<(), String> {
     let name = "m1-screen";
     let dir = cache_dir().join(name);
-    image::make(&dir, art, None)?;
+    image::make(&dir, art, None, false)?;
     let ppm = dir.join("screen.ppm");
     let status = qemu::capture_screen(
         &Vm {

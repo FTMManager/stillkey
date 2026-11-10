@@ -39,7 +39,12 @@ pub fn check_cmdline(text: &str) -> Result<(), String> {
 }
 
 /// Makes `dir/disk.img` from the two binaries, replacing any earlier image.
-pub fn make(dir: &Path, art: &Artifacts, cmdline: Option<&str>) -> Result<PathBuf, String> {
+pub fn make(
+    dir: &Path,
+    art: &Artifacts,
+    cmdline: Option<&str>,
+    with_bootfs: bool,
+) -> Result<PathBuf, String> {
     fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let img = dir.join("disk.img");
     let _ = fs::remove_file(&img);
@@ -59,6 +64,10 @@ pub fn make(dir: &Path, art: &Artifacts, cmdline: Option<&str>) -> Result<PathBu
     let kernel = art.kernel.to_str().ok_or("kernel path is not UTF-8")?;
     tool(dir, "mcopy", &["-i", esp, loader, "::/EFI/BOOT/BOOTX64.EFI"])?;
     tool(dir, "mcopy", &["-i", esp, kernel, "::/EFI/STILLKEY/KERNEL.ELF"])?;
+    if with_bootfs {
+        let bootfs = art.bootfs.to_str().ok_or("BOOTFS.IMG path is not UTF-8")?;
+        tool(dir, "mcopy", &["-i", esp, bootfs, "::/EFI/STILLKEY/BOOTFS.IMG"])?;
+    }
     if let Some(text) = cmdline.filter(|t| !t.is_empty()) {
         check_cmdline(text)?;
         fs::write(dir.join("CMDLINE.TXT"), text).map_err(|e| e.to_string())?;

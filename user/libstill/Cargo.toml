@@ -1,0 +1,14 @@
+[package]
+name = "libstill"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+stillkey-abi = { workspace = true }

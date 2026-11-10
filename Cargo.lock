@@ -58,6 +58,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hello"
+version = "0.1.0"
+dependencies = [
+ "libstill",
+]
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -71,6 +78,13 @@ name = "libc"
 version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+
+[[package]]
+name = "libstill"
+version = "0.1.0"
+dependencies = [
+ "stillkey-abi",
+]
 
 [[package]]
 name = "log"
@@ -128,11 +142,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "sk-bootfs"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
 name = "sk-elf"
 version = "0.1.0"
 
 [[package]]
+name = "sk-kcore"
+version = "0.1.0"
+dependencies = [
+ "stillkey-abi",
+]
+
+[[package]]
 name = "sk-serial"
+version = "0.1.0"
+
+[[package]]
+name = "stillkey-abi"
 version = "0.1.0"
 
 [[package]]
@@ -238,4 +270,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "sha2",
+ "sk-bootfs",
+ "sk-elf",
+ "stillkey-abi",
 ]

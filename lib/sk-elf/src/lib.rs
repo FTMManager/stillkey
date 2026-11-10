@@ -30,6 +30,12 @@ pub const KERNEL_POLICY: Policy = Policy {
     max_mem: 64 << 20,
 };
 
+/// The policy the kernel applies to a ring-3 program whose memory limit is
+/// `max_mem` (docs/10 section 8.3): the image lies in 4 MiB..2 GiB.
+pub const fn user_policy(max_mem: u64) -> Policy {
+    Policy { window_first: 0x40_0000, window_last: 0x7FFF_FFFF, max_file: 16 << 20, max_mem }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reject {
     Size,
