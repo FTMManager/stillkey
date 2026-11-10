@@ -26,7 +26,7 @@ usage: cargo xtask <command>
   font
   image  [--release] [--cmdline \"<boot options>\"]
   run    [--release] [--accel kvm|tcg] [--cmdline \"<boot options>\"] [--gui] [--gdb] [--monitor] [--trace]
-  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2|m2-preempt|m2-kwrite|m2-kexec|m2-screen>
+  test   <m1-unit|m1-repro|m1-screen|m1-boot|m1-panic|m1-pge|m1-reject|m1-serial|m1-stalekey|m1|m2-hello|m2|m2-preempt|m2-prober|m2-kwrite|m2-kexec|m2-screen>
          [--release] [--repeat N] [--accel kvm|tcg] [--timeout SECONDS]
   clean";
 

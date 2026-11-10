@@ -1,0 +1,51 @@
+SK:LOADER:START
+SK:LOADER:CMDLINE len=27
+SK:LOADER:KERNEL_FILE
+SK:LOADER:BOOTFS_FILE size=
+SK:LOADER:BOOTFS_SHA256
+SK:LOADER:KERNEL_VALID
+SK:LOADER:JUMP
+SK:KERNEL:START
+SK:KERNEL:BOOTINFO_OK
+SK:KERNEL:CMDLINE "qemu_exit=on test=m2-prober"
+SK:KERNEL:MEM reserved ranges=6 pages=
+SK:KERNEL:LOWMAP_DROPPED
+SK:KERNEL:M1_OK
+SK:KERNEL:ARCH gdt=7 idt=256 ist=3
+SK:KERNEL:CPU wp=1 nxe=1 smep=
+SK:KERNEL:FRAMES total=
+SK:KERNEL:PAGING root=
+SK:KERNEL:FRAMES released=
+SK:KERNEL:PAGING_AUDIT pages=
+SK:KERNEL:FBCON on cols=160 rows=49
+SK:KERNEL:HEAP base=0xffffc00000000000
+SK:KERNEL:KSPACE sealed tables=256
+SK:KERNEL:APIC mode=
+SK:KERNEL:TIMER hz=100 clock=ticks
+SK:KERNEL:SCHED_OK switches=6
+SK:KERNEL:BOOTFS entries=24 bytes=
+SK:KERNEL:SCENARIO name=m2-prober programs=19
+SK:KERNEL:SPAWN pid=1 name=ticker class=App handles=0
+SK:KERNEL:SPAWN pid=2 name=prober-kread class=App handles=0
+SK:KERNEL:SPAWN pid=3 name=prober-hlt class=App handles=0
+SK:KERNEL:SPAWN pid=4 name=prober-in class=App handles=0
+SK:KERNEL:SPAWN pid=5 name=prober-out class=App handles=0
+SK:KERNEL:SPAWN pid=6 name=prober-cli class=App handles=0
+SK:KERNEL:SPAWN pid=7 name=prober-sse class=App handles=0
+SK:KERNEL:SPAWN pid=8 name=prober-x87 class=App handles=0
+SK:KERNEL:SPAWN pid=9 name=prober-twin-a class=App handles=0
+SK:KERNEL:SPAWN pid=10 name=prober-twin-b class=App handles=0
+SK:KERNEL:SPAWN pid=11 name=prober-memcap class=App handles=0
+SK:KERNEL:SPAWN pid=12 name=prober-badptr class=App handles=0
+SK:KERNEL:SPAWN pid=13 name=prober-handles class=App handles=0
+SK:KERNEL:SPAWN pid=14 name=prober-forge class=App handles=0
+SK:KERNEL:SPAWN pid=15 name=prober-edge class=App handles=0
+SK:KERNEL:SPAWN pid=16 name=prober-wtext class=App handles=0
+SK:KERNEL:SPAWN pid=17 name=prober-xstack class=App handles=0
+SK:KERNEL:SPAWN pid=18 name=prober-xheap class=App handles=0
+SK:KERNEL:SPAWN_REFUSED name=bad-elf reason=wx
+SK:KERNEL:M2_RUNNING
+SK:KERNEL:TIMER_OK ticks=100
+!PANIC
+!REJECTED
+!FAILED

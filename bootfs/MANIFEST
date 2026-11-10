@@ -2,10 +2,30 @@
 # path | source | name | display name | class | mem_mib | flags
 # source is program:<binary> or file:<path from the workspace root>;
 # class is app or system; mem_mib 0 is the default limit; flags is - or a
-# comma-separated list of critical and display.
+# comma-separated list of critical, display and corrupt:wx. corrupt:wx is
+# for the build: the entry gets the program with a segment made writable
+# and executable, an image the kernel must refuse to start.
 bin/hello | program:hello | hello | Hello | app | 0 | -
 bin/ticker | program:ticker | ticker | Ticker | app | 0 | -
 bin/faulter | program:faulter | faulter | Faulter | app | 0 | -
 bin/spinner | program:spinner | spinner | Spinner | app | 0 | -
 bin/inspector | program:inspector | inspector | Inspector | system | 0 | -
+bin/prober-kread | program:prober-kread | prober-kread | Probe kread | app | 0 | -
+bin/prober-hlt | program:prober-hlt | prober-hlt | Probe hlt | app | 0 | -
+bin/prober-in | program:prober-in | prober-in | Probe in | app | 0 | -
+bin/prober-out | program:prober-out | prober-out | Probe out | app | 0 | -
+bin/prober-cli | program:prober-cli | prober-cli | Probe cli | app | 0 | -
+bin/prober-sse | program:prober-sse | prober-sse | Probe sse | app | 0 | -
+bin/prober-x87 | program:prober-x87 | prober-x87 | Probe x87 | app | 0 | -
+bin/prober-twin-a | program:prober-twin-a | prober-twin-a | Probe twin-a | app | 0 | -
+bin/prober-twin-b | program:prober-twin-b | prober-twin-b | Probe twin-b | app | 0 | -
+bin/prober-memcap | program:prober-memcap | prober-memcap | Probe memcap | app | 0 | -
+bin/prober-badptr | program:prober-badptr | prober-badptr | Probe badptr | app | 0 | -
+bin/prober-handles | program:prober-handles | prober-handles | Probe handles | app | 0 | -
+bin/prober-forge | program:prober-forge | prober-forge | Probe forge | app | 0 | -
+bin/prober-edge | program:prober-edge | prober-edge | Probe edge | app | 0 | -
+bin/prober-wtext | program:prober-wtext | prober-wtext | Probe wtext | app | 0 | -
+bin/prober-xstack | program:prober-xstack | prober-xstack | Probe xstack | app | 0 | -
+bin/prober-xheap | program:prober-xheap | prober-xheap | Probe xheap | app | 0 | -
+bin/bad-elf | program:ticker | bad-elf | Refused image | app | 0 | corrupt:wx
 licenses/spleen.txt | file:assets/spleen-LICENSE | spleen-license | Spleen licence | app | 0 | -

@@ -1,0 +1,132 @@
+[package]
+name = "prober"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+build = "build.rs"
+autobins = false
+
+# One binary per probe of docs/10 section 9: `prober-<probe>`.
+
+[[bin]]
+name = "prober-kread"
+path = "src/bin/kread.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-hlt"
+path = "src/bin/hlt.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-in"
+path = "src/bin/in.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-out"
+path = "src/bin/out.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-cli"
+path = "src/bin/cli.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-sse"
+path = "src/bin/sse.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-x87"
+path = "src/bin/x87.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-twin-a"
+path = "src/bin/twin-a.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-twin-b"
+path = "src/bin/twin-b.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-memcap"
+path = "src/bin/memcap.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-badptr"
+path = "src/bin/badptr.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-handles"
+path = "src/bin/handles.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-forge"
+path = "src/bin/forge.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-edge"
+path = "src/bin/edge.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-wtext"
+path = "src/bin/wtext.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-xstack"
+path = "src/bin/xstack.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "prober-xheap"
+path = "src/bin/xheap.rs"
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+libstill = { workspace = true }

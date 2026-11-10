@@ -25,6 +25,30 @@ const SCENARIOS: &[Scenario] = &[
     (b"m2", &[("bin/ticker", false), ("bin/faulter", false), ("bin/inspector", true)]),
     (b"m2-hello", &[("bin/hello", false)]),
     (b"m2-preempt", &[("bin/ticker", false), ("bin/spinner", false), ("bin/inspector", true)]),
+    (
+        b"m2-prober",
+        &[
+            ("bin/ticker", false),
+            ("bin/prober-kread", false),
+            ("bin/prober-hlt", false),
+            ("bin/prober-in", false),
+            ("bin/prober-out", false),
+            ("bin/prober-cli", false),
+            ("bin/prober-sse", false),
+            ("bin/prober-x87", false),
+            ("bin/prober-twin-a", false),
+            ("bin/prober-twin-b", false),
+            ("bin/prober-memcap", false),
+            ("bin/prober-badptr", false),
+            ("bin/prober-handles", false),
+            ("bin/prober-forge", false),
+            ("bin/prober-edge", false),
+            ("bin/prober-wtext", false),
+            ("bin/prober-xstack", false),
+            ("bin/prober-xheap", false),
+            ("bin/bad-elf", false),
+        ],
+    ),
 ];
 
 /// The first `test=` word that names a scenario selects it. Other `test=`

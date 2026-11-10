@@ -105,7 +105,7 @@ fn cargo_build(
 pub fn compile(release: bool, target_dir: Option<&Path>) -> Result<Built, String> {
     let rows = bootfs::read_manifest()?;
     let mut bare = vec!["stillkey-kernel"];
-    bare.extend(bootfs::programs(&rows));
+    bare.extend(bootfs::packages(&rows));
     cargo_build(&["stillkey-loader"], "x86_64-unknown-uefi", release, target_dir)?;
     cargo_build(&bare, "x86_64-unknown-none", release, target_dir)?;
     let cargo_profile = if release { "release" } else { "debug" };

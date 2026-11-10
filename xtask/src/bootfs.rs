@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use sk_bootfs::build::Source;
 use sk_bootfs::{CLASS_APP, CLASS_SYSTEM, FLAG_CRITICAL, FLAG_DISPLAY, KIND_FILE, KIND_PROGRAM};
 
+use crate::inspect::{self, Corruption};
 use crate::util::workspace_root;
 
 /// Where the bytes of an entry come from.
@@ -28,6 +29,9 @@ pub struct Row {
     pub class: u32,
     pub mem_limit_mib: u32,
     pub flags: u32,
+    /// `corrupt:wx`: the entry is the program with a segment made writable
+    /// and executable, which the kernel must refuse to start.
+    pub corrupt_wx: bool,
 }
 
 fn parse_line(line: &str) -> Result<Row, String> {
@@ -47,12 +51,17 @@ fn parse_line(line: &str) -> Result<Row, String> {
     };
     let mem_limit_mib = mem.parse().map_err(|_| format!("mem_mib `{mem}` is not a number"))?;
     let mut bits = 0;
+    let mut corrupt_wx = false;
     if flags != "-" {
         for flag in flags.split(',') {
             bits |= match flag.trim() {
                 "critical" => FLAG_CRITICAL,
                 "display" => FLAG_DISPLAY,
-                other => return Err(format!("flag `{other}` is neither critical nor display")),
+                "corrupt:wx" => {
+                    corrupt_wx = true;
+                    0
+                }
+                other => return Err(format!("flag `{other}` is none of critical, display, corrupt:wx")),
             };
         }
     }
@@ -64,6 +73,7 @@ fn parse_line(line: &str) -> Result<Row, String> {
         class,
         mem_limit_mib,
         flags: bits,
+        corrupt_wx,
     })
 }
 
@@ -87,7 +97,7 @@ pub fn read_manifest() -> Result<Vec<Row>, String> {
     parse_manifest(&fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?)
 }
 
-/// The programs to compile: package names, each once.
+/// The programs the manifest names: binary names, each once.
 pub fn programs(rows: &[Row]) -> Vec<&str> {
     let mut names: Vec<&str> = rows
         .iter()
@@ -101,8 +111,23 @@ pub fn programs(rows: &[Row]) -> Vec<&str> {
     names
 }
 
+/// The package that builds a program: the probes are the binaries of one
+/// package, every other program is a package of its own name.
+pub fn package(binary: &str) -> &str {
+    if binary.starts_with("prober-") { "prober" } else { binary }
+}
+
+/// The packages to compile, each once.
+pub fn packages(rows: &[Row]) -> Vec<&str> {
+    let mut names: Vec<&str> = programs(rows).into_iter().map(package).collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
 /// Packs the manifest's files; programs are taken from `bin_dir`. A program
-/// the kernel would refuse to load is refused here, at build time.
+/// the kernel would refuse to load is refused here, at build time; a
+/// `corrupt:wx` entry must be refused, and for that reason.
 pub fn pack(rows: &[Row], bin_dir: &Path) -> Result<Vec<u8>, String> {
     let mut sources = Vec::new();
     for row in rows {
@@ -110,8 +135,18 @@ pub fn pack(rows: &[Row], bin_dir: &Path) -> Result<Vec<u8>, String> {
             From::Program(binary) => (bin_dir.join(binary), KIND_PROGRAM),
             From::File(path) => (workspace_root().join(path), KIND_FILE),
         };
-        let data = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
-        if kind == KIND_PROGRAM {
+        let mut data = fs::read(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+        if row.corrupt_wx {
+            if kind != KIND_PROGRAM {
+                return Err(format!("{}: corrupt:wx is for programs", row.path));
+            }
+            data = inspect::corrupt(&data, Corruption::Wx)?;
+            match sk_elf::validate(&data, &sk_elf::user_policy(stillkey_abi::DEFAULT_MEM_LIMIT)) {
+                Err(reason) if reason.as_str() == "wx" => {}
+                Err(reason) => return Err(format!("{}: refused with {}, expected wx", row.path, reason.as_str())),
+                Ok(_) => return Err(format!("{}: the corrupted image is still loadable", row.path)),
+            }
+        } else if kind == KIND_PROGRAM {
             let limit = match row.mem_limit_mib {
                 0 => stillkey_abi::DEFAULT_MEM_LIMIT,
                 mib => u64::from(mib) << 20,
@@ -152,6 +187,20 @@ mod tests {
         assert_eq!(rows[1].mem_limit_mib, 4);
         assert_eq!(rows[1].flags, FLAG_CRITICAL | FLAG_DISPLAY);
         assert_eq!(programs(&rows), ["hello"]);
+        assert!(!rows[0].corrupt_wx && !rows[1].corrupt_wx);
+    }
+
+    #[test]
+    fn the_probes_are_binaries_of_one_package() {
+        let text = "bin/prober-hlt | program:prober-hlt | prober-hlt | P | app | 0 | -\n\
+                    bin/prober-in | program:prober-in | prober-in | P | app | 0 | -\n\
+                    bin/ticker | program:ticker | ticker | T | app | 0 | -\n\
+                    bin/bad-elf | program:ticker | bad-elf | B | app | 0 | corrupt:wx\n";
+        let rows = parse_manifest(text).unwrap();
+        assert_eq!(programs(&rows), ["prober-hlt", "prober-in", "ticker"]);
+        assert_eq!(packages(&rows), ["prober", "ticker"]);
+        assert_eq!(rows.iter().map(|row| row.corrupt_wx).collect::<Vec<_>>(), [false, false, false, true]);
+        assert_eq!(rows[3].flags, 0);
     }
 
     #[test]

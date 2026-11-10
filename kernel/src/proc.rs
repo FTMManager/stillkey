@@ -192,7 +192,7 @@ fn destroy(space: &Space) -> u64 {
 /// the system's diagnostics. `Err` is the reason for `SPAWN_REFUSED`.
 pub fn spawn(entry: &Entry<'_>, file: &[u8], diag: bool) -> Result<u32, &'static str> {
     if state().processes.len() >= MAX_PROCESSES {
-        return Err("processes");
+        return Err("table");
     }
     let limit = match entry.mem_limit_mib {
         0 => DEFAULT_MEM_LIMIT,
