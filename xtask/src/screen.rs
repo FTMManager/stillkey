@@ -186,15 +186,16 @@ mod tests {
 
     #[test]
     fn lines_are_text_until_the_banner_and_red_from_it() {
-        // Six rows of eight columns: the banner's first line takes three.
-        let rgb = render_console(64, 112, &lines(&["SK:A", "SK:KERNEL:PANIC_BEGIN", "SK:B"])).unwrap();
+        // Seven rows of eight columns: the banner's first line takes four,
+        // eight bytes and then six in each row after it.
+        let rgb = render_console(64, 128, &lines(&["SK:A", "SK:KERNEL:PANIC_BEGIN", "SK:B"])).unwrap();
         assert_eq!(colours(&rgb, 0..8), [CYAN]);
         assert_eq!(colours(&rgb, 8..16), [VOID]);
         assert_eq!(colours(&rgb, 16..32), [VOID, TEXT]);
-        for row in 2..6 {
+        for row in 2..7 {
             assert_eq!(colours(&rgb, row * 16..row * 16 + 16), [VOID, RED], "row {row}");
         }
-        assert_eq!(colours(&rgb, 96..112), [VOID]);
+        assert_eq!(colours(&rgb, 112..128), [VOID]);
     }
 
     #[test]

@@ -21,6 +21,8 @@ pub const RED: u32 = 0xFF_6B_74;
 
 /// The console shows this many bytes of a log line; the rest is cut.
 pub const LINE_MAX: usize = 512;
+/// Empty cells at the start of every row of a line after its first.
+pub const CONTINUATION_INDENT: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Console {
@@ -48,7 +50,8 @@ impl Console {
     }
 
     /// Writes `text` on the next row, and on further rows if it is longer
-    /// than a row. `buf` is the buffer from its first byte. A byte outside
+    /// than a row; each further row starts after `CONTINUATION_INDENT`
+    /// empty cells. `buf` is the buffer from its first byte. A byte outside
     /// 0x20-0x7E is drawn as `?`.
     pub fn write_line(&mut self, fb: &Framebuffer, buf: &mut [u8], text: &[u8], rgb: u32) {
         let (Some(pixel), Some(span)) = (fb.pixel(rgb), fb.span_bytes()) else {
@@ -58,17 +61,26 @@ impl Console {
             return;
         }
         let mut rest = text;
+        let mut indent = 0;
         loop {
-            let (now, later) = rest.split_at(rest.len().min(self.cols as usize));
+            let (now, later) = rest.split_at(rest.len().min((self.cols - indent) as usize));
             let row = self.next_row(fb, buf);
             for (col, &byte) in now.iter().enumerate() {
-                draw(fb, buf, col as u32, row, font::glyph(byte), pixel);
+                draw(fb, buf, indent + col as u32, row, font::glyph(byte), pixel);
             }
             if later.is_empty() {
                 return;
             }
             rest = later;
+            indent = self.indent();
         }
+    }
+
+    /// The cells a continuation row leaves empty at its start, so that the
+    /// text of a long line cannot look like the start of another line. A
+    /// grid of fewer than `CONTINUATION_INDENT` + 1 columns has none.
+    fn indent(&self) -> u32 {
+        if self.cols > CONTINUATION_INDENT { CONTINUATION_INDENT } else { 0 }
     }
 
     /// The row to write next; when every row is used, the text moves up by
@@ -189,7 +201,7 @@ mod tests {
     #[test]
     fn a_line_one_byte_longer_than_a_row_uses_two_rows() {
         let fb = small();
-        assert_eq!(shown(&fb, &[b"ABCDEFGHI", b"z"]), shown(&fb, &[b"ABCDEFGH", b"I", b"z"]));
+        assert_eq!(shown(&fb, &[b"ABCDEFGHI", b"z"]), shown(&fb, &[b"ABCDEFGH", b"  I", b"z"]));
     }
 
     #[test]
@@ -238,7 +250,39 @@ mod tests {
     #[test]
     fn a_wrapped_line_scrolls_too() {
         let fb = small();
-        assert_eq!(shown(&fb, &[b"1", b"2", b"ABCDEFGHIJKLMNOPQ"]), shown(&fb, &[b"ABCDEFGH", b"IJKLMNOP", b"Q"]));
+        assert_eq!(
+            shown(&fb, &[b"1", b"2", b"ABCDEFGHIJKLMNOPQ"]),
+            shown(&fb, &[b"ABCDEFGH", b"  IJKLMN", b"  OPQ"])
+        );
+    }
+
+    /// What a program prints cannot begin a row: only the first row of a
+    /// line starts in the first column, and the kernel writes its start.
+    #[test]
+    fn a_continuation_row_leaves_its_first_two_cells_empty() {
+        let fb = small();
+        let buf = shown(&fb, &[b"ABCDEFGHSK:KERNEL:PANIC"]);
+        for y in 32..64usize {
+            for x in 0..16usize {
+                let at = (y * 64 + x) * 4;
+                assert_eq!(buf[at..at + 4], [0x06, 0x08, 0x0C, 0], "x={x} y={y}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_continuation_row_holds_two_bytes_fewer() {
+        let fb = small();
+        assert_eq!(
+            shown(&fb, &[b"ABCDEFGHSK:KERNEL:"]),
+            shown(&fb, &[b"ABCDEFGH", b"  SK:KER", b"  NEL:"])
+        );
+    }
+
+    #[test]
+    fn a_grid_too_narrow_to_indent_still_shows_every_byte() {
+        let fb = screen(16, 64, 16, FB_FORMAT_RGBX);
+        assert_eq!(shown(&fb, &[b"ABC"]), shown(&fb, &[b"AB", b"C"]));
     }
 
     #[test]
