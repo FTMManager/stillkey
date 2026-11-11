@@ -5,16 +5,18 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::build::{self, Artifacts};
 use crate::inspect::{self, Corruption};
 use crate::qemu::{self, Accel, Serial, Vm};
 use crate::util::{cache_dir, sha256_hex, workspace_root};
-use crate::{check, image, m2, screen};
+use crate::{bootfs, check, image, m2, screen};
 
 pub const NAMES: &str =
     "m1-unit, m1-repro, m1-screen, m1-boot, m1-panic, m1-pge, m1-reject, m1-serial, m1-stalekey, m1, \
-     m2-hello, m2, m2-preempt, m2-prober, m2-kwrite, m2-kexec or m2-screen";
+     m2-unit, m2-repro, m2-screen, m2-hello, m2-crash, m2-preempt, m2-prober, m2-kwrite, m2-kexec, m2-badfs, \
+     m2 or all";
 
 pub struct TestOpts {
     pub release: bool,
@@ -36,8 +38,14 @@ pub fn run(name: &str, o: &TestOpts) -> Result<(), String> {
             .and_then(|art| repeated(o, &art, tests))
     };
     let result = match name {
-        "m1-unit" => host_tests().and_then(|_| build::build(o.release)).and_then(|art| artifacts(&art)),
-        "m1-repro" => repro(),
+        "m1-unit" => {
+            host_tests("m1-unit", &M1_CRATES).and_then(|_| build::build(o.release)).and_then(|art| artifacts(&art))
+        }
+        "m1-repro" => repro("m1-repro", &M1_PARTS),
+        "m2-unit" => host_tests("m2-unit", &M2_CRATES)
+            .and_then(|_| build::build(o.release))
+            .and_then(|art| bootfs_artifact(&art)),
+        "m2-repro" => repro("m2-repro", &M2_PARTS),
         "m1-screen" => check::require_present()
             .and_then(|_| build::build(o.release))
             .and_then(|art| screen_boot(o, &art)),
@@ -51,26 +59,22 @@ pub fn run(name: &str, o: &TestOpts) -> Result<(), String> {
         "m2-screen" => check::require_present()
             .and_then(|_| build::build(o.release))
             .and_then(|art| m2::screen_boot(o, &art)),
-        "m2" => boots(&[m2::crash_boot]),
+        "m2-crash" => boots(&[m2::crash_boot]),
         "m2-preempt" => boots(&[m2::preempt_boot]),
         "m2-prober" => boots(&[m2::prober_boot]),
         "m2-kwrite" => boots(&[kwrite_boot]),
         "m2-kexec" => boots(&[kexec_boot]),
-        "m1" => check::require_present().and_then(|_| {
-            host_tests()?;
-            let art = build::build(o.release)?;
-            artifacts(&art)?;
-            repro()?;
-            screen_boot(o, &art)?;
-            repeated(o, &art, &[boot, panic_boot, pge_boot, reject_boot, serial_boot, stalekey_boot])
-        }),
+        "m2-badfs" => boots(&[badfs_boot]),
+        "m1" => check::require_present().and_then(|_| m1_suite(o)),
+        "m2" => check::require_present().and_then(|_| m2_suite(o)),
+        "all" => check::require_present().and_then(|_| m1_suite(o)).and_then(|_| m2_suite(o)),
         other => Err(format!("unknown test `{other}`: expected {NAMES}")),
     };
     // `m1-repro` always builds the release profile; neither it nor the host
     // tests start a VM.
-    let profile = if name == "m1-repro" { "release" } else { o.profile() };
+    let profile = if matches!(name, "m1-repro" | "m2-repro") { "release" } else { o.profile() };
     let accel = match name {
-        "m1-unit" | "m1-repro" => "none",
+        "m1-unit" | "m1-repro" | "m2-unit" | "m2-repro" => "none",
         // Software emulation is the only accelerator this user can use.
         _ if o.accel == Accel::Tcg && !check::kvm_usable() => "tcg only",
         _ => o.accel.as_str(),
@@ -96,10 +100,15 @@ fn repeated(o: &TestOpts, art: &Artifacts, tests: &[BootTest]) -> Result<(), Str
 
 // ---- m1-unit ---------------------------------------------------------------
 
-/// Part 1: the host tests of the two library crates and of this tool's own
-/// header and picture readers. Fails if a crate ran zero tests.
-fn host_tests() -> Result<(), String> {
-    for krate in ["sk-elf", "stillkey-bootinfo", "xtask"] {
+/// The crates whose host tests `m1-unit` runs, and those of `m2-unit`: the
+/// new library crates and the ones of Milestone 1 (docs/10 section 10).
+const M1_CRATES: [&str; 3] = ["sk-elf", "stillkey-bootinfo", "xtask"];
+const M2_CRATES: [&str; 6] = ["stillkey-abi", "sk-bootfs", "sk-kcore", "sk-elf", "stillkey-bootinfo", "xtask"];
+
+/// Part 1 of `m1-unit` and `m2-unit`: the host tests of the library crates
+/// and of this tool. Fails if a crate ran zero tests.
+fn host_tests(test: &str, crates: &[&str]) -> Result<(), String> {
+    for krate in crates {
         let out = build::cargo()
             .args(["test", "--locked", "-p", krate])
             .output()
@@ -119,7 +128,7 @@ fn host_tests() -> Result<(), String> {
             print!("{text}");
         }
         println!(
-            "RESULT test=m1-unit crate={krate} passed={passed} result={}",
+            "RESULT test={test} crate={krate} passed={passed} result={}",
             if ok { "pass" } else { "fail" }
         );
         if !out.status.success() {
@@ -159,44 +168,184 @@ fn artifacts(art: &Artifacts) -> Result<(), String> {
     Ok(())
 }
 
-// ---- m1-repro --------------------------------------------------------------
+// ---- m2-unit ---------------------------------------------------------------
+
+/// The entry of `BOOTFS.IMG` that the kernel must refuse to start.
+const BAD_ELF: &str = "bin/bad-elf";
+
+/// Part 2 of `m2-unit`: what `BOOTFS.IMG` holds. The image parses; every
+/// entry's digest is that of its bytes; every program but `bin/bad-elf` is
+/// one the kernel would start; `bin/bad-elf` is refused for its writable
+/// and executable segment; no program names a directory of this machine.
+fn check_bootfs(image: &[u8], host_paths: &[(&'static str, PathBuf)]) -> Result<String, String> {
+    let parsed = sk_bootfs::parse(image).map_err(|reason| format!("the image is refused: {}", reason.as_str()))?;
+    let (mut entries, mut programs, mut refused) = (0, 0, false);
+    for entry in parsed.entries() {
+        entries += 1;
+        let data = parsed.data(&entry);
+        let recorded: String = entry.sha256.iter().map(|byte| format!("{byte:02x}")).collect();
+        if sha256_hex(data) != recorded {
+            return Err(format!("{}: the digest in the image is not that of its bytes", entry.path));
+        }
+        if entry.kind != sk_bootfs::KIND_PROGRAM {
+            continue;
+        }
+        programs += 1;
+        let limit = match entry.mem_limit_mib {
+            0 => stillkey_abi::DEFAULT_MEM_LIMIT,
+            mib => u64::from(mib) << 20,
+        };
+        let verdict = sk_elf::validate(data, &sk_elf::user_policy(limit));
+        if entry.path == BAD_ELF {
+            match verdict {
+                Err(reason) if reason.as_str() == "wx" => refused = true,
+                Err(reason) => return Err(format!("{BAD_ELF} is refused with {}, expected wx", reason.as_str())),
+                Ok(_) => return Err(format!("{BAD_ELF} is a loadable program")),
+            }
+        } else if let Err(reason) = verdict {
+            return Err(format!("{}: not a loadable program: {}", entry.path, reason.as_str()));
+        }
+        let named = host_paths.iter().find(|(_, path)| contains(data, path.as_os_str().as_encoded_bytes()));
+        if let Some((what, _)) = named {
+            return Err(format!("{} contains the path of: {what}", entry.path));
+        }
+    }
+    if !refused {
+        return Err(format!("the image has no {BAD_ELF}"));
+    }
+    Ok(format!("entries={entries} programs={programs} refused=bad-elf:wx host_paths=none"))
+}
+
+fn bootfs_artifact(art: &Artifacts) -> Result<(), String> {
+    let image = fs::read(&art.bootfs).map_err(|e| format!("{}: {e}", art.bootfs.display()))?;
+    match check_bootfs(&image, &host_paths()?) {
+        Ok(fields) => {
+            println!("RESULT test=m2-unit artifact=BOOTFS.IMG profile={} {fields} result=pass", art.profile);
+            Ok(())
+        }
+        Err(why) => {
+            println!("RESULT test=m2-unit artifact=BOOTFS.IMG profile={} result=fail", art.profile);
+            println!("  FAILED: {why}");
+            Err(format!("BOOTFS.IMG: {why}"))
+        }
+    }
+}
+
+// ---- The suites ------------------------------------------------------------
+
+/// `m1`: every test of Milestone 1 (docs/08 section 9).
+fn m1_suite(o: &TestOpts) -> Result<(), String> {
+    host_tests("m1-unit", &M1_CRATES)?;
+    let art = build::build(o.release)?;
+    artifacts(&art)?;
+    repro("m1-repro", &M1_PARTS)?;
+    screen_boot(o, &art)?;
+    repeated(o, &art, &[boot, panic_boot, pge_boot, reject_boot, serial_boot, stalekey_boot])
+}
+
+/// `m2`: every test of Milestone 2 in the order of docs/10 section 10: the
+/// three that run once, then the boot tests `--repeat` times.
+fn m2_suite(o: &TestOpts) -> Result<(), String> {
+    host_tests("m2-unit", &M2_CRATES)?;
+    let art = build::build(o.release)?;
+    bootfs_artifact(&art)?;
+    repro("m2-repro", &M2_PARTS)?;
+    m2::screen_boot(o, &art)?;
+    repeated(
+        o,
+        &art,
+        &[hello_boot, m2::crash_boot, m2::preempt_boot, m2::prober_boot, kwrite_boot, kexec_boot, badfs_boot],
+    )
+}
+
+// ---- m1-repro, m2-repro ----------------------------------------------------
 
 /// True if `needle` occurs in `haystack`.
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     !needle.is_empty() && haystack.windows(needle.len()).any(|window| window == needle)
 }
 
-/// Two release builds into two fresh, different build directories give the
-/// same bytes, and neither binary names a directory of this machine.
-fn repro() -> Result<(), String> {
-    let run = cache_dir().join("m1-repro");
-    let keep = workspace_root().join("build").join("m1-repro");
-    // Directories of this machine that must not be recorded in a binary.
-    let mut host_paths = vec![("workspace", workspace_root())];
+/// The directories of this machine that must not be recorded in a binary.
+fn host_paths() -> Result<Vec<(&'static str, PathBuf)>, String> {
+    let mut paths = vec![("workspace", workspace_root())];
     if let Some(home) = std::env::var_os("HOME") {
-        host_paths.push(("home", PathBuf::from(home)));
+        paths.push(("home", PathBuf::from(home)));
     }
-    host_paths.push(("cargo home", build::cargo_home()?));
+    paths.push(("cargo home", build::cargo_home()?));
+    Ok(paths)
+}
 
-    let mut builds = Vec::new();
-    for name in ["repro-a", "repro-b"] {
-        let dir = run.join(name);
-        if dir.exists() {
-            fs::remove_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        }
-        let built = build::compile(true, Some(&dir))?;
-        let loader = fs::read(&built.loader).map_err(|e| format!("{}: {e}", built.loader.display()))?;
-        let kernel = fs::read(&built.kernel).map_err(|e| format!("{}: {e}", built.kernel.display()))?;
-        let kept = keep.join(name);
-        fs::create_dir_all(&kept).map_err(|e| e.to_string())?;
-        let _ = fs::write(kept.join("BOOTX64.EFI"), &loader);
-        let _ = fs::write(kept.join("KERNEL.ELF"), &kernel);
-        builds.push((loader, kernel));
-    }
+/// What one release build gives.
+struct Rebuilt {
+    loader: Vec<u8>,
+    kernel: Vec<u8>,
+    bootfs: Vec<u8>,
+}
 
+/// A file of a build, by its name on the boot volume.
+type Part = (&'static str, fn(&Rebuilt) -> &[u8]);
+
+fn loader_of(built: &Rebuilt) -> &[u8] {
+    &built.loader
+}
+
+fn kernel_of(built: &Rebuilt) -> &[u8] {
+    &built.kernel
+}
+
+fn bootfs_of(built: &Rebuilt) -> &[u8] {
+    &built.bootfs
+}
+
+const M1_PARTS: [Part; 2] = [("BOOTX64.EFI", loader_of), ("KERNEL.ELF", kernel_of)];
+const M2_PARTS: [Part; 1] = [("BOOTFS.IMG", bootfs_of)];
+
+/// Where the files of the two builds are kept for a look after a failure.
+fn repro_keep() -> PathBuf {
+    workspace_root().join("build").join("m1-repro")
+}
+
+/// Two release builds into two fresh, different build directories. They are
+/// made once per run of this tool: `m1-repro` and `m2-repro` compare
+/// different files of the same two builds.
+fn rebuilt() -> Result<&'static [Rebuilt], String> {
+    static BUILDS: OnceLock<Result<Vec<Rebuilt>, String>> = OnceLock::new();
+    BUILDS
+        .get_or_init(|| -> Result<Vec<Rebuilt>, String> {
+            let run = cache_dir().join("m1-repro");
+            let rows = bootfs::read_manifest()?;
+            let mut builds = Vec::new();
+            for name in ["repro-a", "repro-b"] {
+                let dir = run.join(name);
+                if dir.exists() {
+                    fs::remove_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+                }
+                let built = build::compile(true, Some(&dir))?;
+                let loader = fs::read(&built.loader).map_err(|e| format!("{}: {e}", built.loader.display()))?;
+                let kernel = fs::read(&built.kernel).map_err(|e| format!("{}: {e}", built.kernel.display()))?;
+                let bootfs = bootfs::pack(&rows, &built.programs)?;
+                let kept = repro_keep().join(name);
+                fs::create_dir_all(&kept).map_err(|e| e.to_string())?;
+                let _ = fs::write(kept.join("BOOTX64.EFI"), &loader);
+                let _ = fs::write(kept.join("KERNEL.ELF"), &kernel);
+                let _ = fs::write(kept.join("BOOTFS.IMG"), &bootfs);
+                builds.push(Rebuilt { loader, kernel, bootfs });
+            }
+            Ok(builds)
+        })
+        .as_deref()
+        .map_err(String::clone)
+}
+
+/// `m1-repro` and `m2-repro`: each named file is the same bytes in both
+/// builds, and none names a directory of this machine.
+fn repro(test: &str, parts: &[Part]) -> Result<(), String> {
+    let builds = rebuilt()?;
+    let keep = repro_keep();
+    let host_paths = host_paths()?;
     let mut verdict = Ok(());
-    let (a, b) = (&builds[0], &builds[1]);
-    for (name, first, second) in [("BOOTX64.EFI", &a.0, &b.0), ("KERNEL.ELF", &a.1, &b.1)] {
+    for (name, part) in parts {
+        let (first, second) = (part(&builds[0]), part(&builds[1]));
         let same = first == second;
         let named: Vec<&str> = host_paths
             .iter()
@@ -208,7 +357,7 @@ fn repro() -> Result<(), String> {
             .collect();
         let ok = same && named.is_empty();
         println!(
-            "RESULT test=m1-repro artifact={name} sha256_a={} sha256_b={} host_paths={} result={}",
+            "RESULT test={test} artifact={name} sha256_a={} sha256_b={} host_paths={} result={}",
             sha256_hex(first),
             sha256_hex(second),
             if named.is_empty() { "none".to_string() } else { named.join("+").replace(' ', "_") },
@@ -489,6 +638,44 @@ fn hello_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
     verdict
 }
 
+/// In every Milestone 2 run the loader's digest of `BOOTFS.IMG` is the one
+/// the host computed (docs/10 section 10).
+fn loader_digest(lines: &[String], art: &Artifacts) -> Result<(), String> {
+    let digest = format!("SK:LOADER:BOOTFS_SHA256 {}", art.bootfs_sha256);
+    if lines.contains(&digest) { Ok(()) } else { Err(format!("no line `{digest}`")) }
+}
+
+/// `m2-badfs` (docs/10 section 10): the boot volume holds a `BOOTFS.IMG`
+/// whose first byte is wrong. The kernel must refuse it by name, start no
+/// program and stop.
+fn badfs_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
+    let name = "m2-badfs";
+    let mut image = fs::read(&art.bootfs).map_err(|e| format!("{}: {e}", art.bootfs.display()))?;
+    *image.first_mut().ok_or("BOOTFS.IMG is empty")? ^= 0xFF;
+    let dir = cache_dir().join("m2-badfs-image");
+    fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let bootfs = dir.join("BOOTFS.IMG");
+    fs::write(&bootfs, &image).map_err(|e| format!("{}: {e}", bootfs.display()))?;
+    let bad = Artifacts {
+        loader: art.loader.clone(),
+        kernel: art.kernel.clone(),
+        profile: art.profile,
+        kernel_sha256: art.kernel_sha256.clone(),
+        bootfs,
+        bootfs_sha256: sha256_hex(&image),
+    };
+    let (outcome, kept) = boot_image(o, &bad, name, "qemu_exit=on", true)?;
+    let lines = &outcome.lines;
+    let verdict = (|| {
+        check_expect(lines, name)?;
+        expect_status(&outcome, 37)?;
+        loader_digest(lines, &bad)?;
+        frames_add_up(lines)
+    })();
+    report(o, name, round, &outcome, &kept, &verdict);
+    verdict
+}
+
 /// `m2-kwrite` and `m2-kexec` (docs/10 sections 8.6 and 10): the kernel
 /// writes to its own code, or calls its own data. The processor must refuse
 /// with a page fault whose error code says "the page is there, and this
@@ -500,6 +687,7 @@ fn kernel_fault_boot(o: &TestOpts, art: &Artifacts, round: u32, name: &str, self
     let verdict = (|| {
         check_expect(lines, name)?;
         expect_status(&outcome, 37)?;
+        loader_digest(lines, art)?;
         frames_add_up(lines)?;
         let announced = hex_field(lines, "SK:KERNEL:SELFTEST", "addr")?;
         let banner = "SK:KERNEL:PANIC exception";
@@ -860,5 +1048,63 @@ command: timeout -k 5 60 qemu-system-x86_64
         let cut = HEADER.replace("accel=kvm
 ", "");
         assert!(check_log_header(&cut).unwrap_err().contains("accel="));
+    }
+}
+
+#[cfg(test)]
+mod bootfs_tests {
+    use sk_bootfs::build::{Source, pack};
+    use sk_bootfs::{CLASS_APP, KIND_FILE, KIND_PROGRAM};
+
+    use super::*;
+
+    fn source(path: &str, kind: u32, data: &[u8]) -> Source {
+        Source {
+            path: path.to_string(),
+            name: "x".to_string(),
+            display_name: "X".to_string(),
+            class: CLASS_APP,
+            mem_limit_mib: 0,
+            flags: 0,
+            kind,
+            data: data.to_vec(),
+        }
+    }
+
+    fn checked(sources: &[Source]) -> Result<String, String> {
+        check_bootfs(&pack(sources).unwrap(), &[])
+    }
+
+    #[test]
+    fn an_image_without_the_refused_program_fails() {
+        let error = checked(&[source("licenses/a.txt", KIND_FILE, b"text")]).unwrap_err();
+        assert_eq!(error, "the image has no bin/bad-elf");
+    }
+
+    #[test]
+    fn the_refused_program_must_be_refused_for_its_segment() {
+        let error = checked(&[source(BAD_ELF, KIND_PROGRAM, b"not an ELF file")]).unwrap_err();
+        assert!(error.starts_with("bin/bad-elf is refused with ") && error.ends_with("expected wx"), "{error}");
+    }
+
+    #[test]
+    fn every_other_program_must_be_loadable() {
+        let error = checked(&[source("bin/a", KIND_PROGRAM, b"not an ELF file")]).unwrap_err();
+        assert!(error.starts_with("bin/a: not a loadable program: "), "{error}");
+    }
+
+    #[test]
+    fn a_wrong_magic_fails() {
+        let mut image = pack(&[source("licenses/a.txt", KIND_FILE, b"text")]).unwrap();
+        image[0] ^= 0xFF;
+        assert_eq!(check_bootfs(&image, &[]).unwrap_err(), "the image is refused: magic");
+    }
+
+    #[test]
+    fn bytes_that_changed_after_packing_fail() {
+        let mut image = pack(&[source("licenses/a.txt", KIND_FILE, b"text")]).unwrap();
+        let at = image.windows(4).rposition(|window| window == b"text").unwrap();
+        image[at] ^= 1;
+        assert!(check_bootfs(&image, &[]).unwrap_err().contains("digest"));
     }
 }
