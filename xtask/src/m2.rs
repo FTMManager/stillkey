@@ -3,6 +3,8 @@
 //! checked against the kernel's own lines and against each other.
 
 use std::fs;
+use std::ops::RangeInclusive;
+use std::time::Duration;
 
 use crate::build::Artifacts;
 use crate::follow::{self, Verdict};
@@ -188,6 +190,35 @@ fn ticks(apps: &[AppLine<'_>]) -> Result<Vec<usize>, String> {
         places.push(line.index);
     }
     Ok(places)
+}
+
+/// The ticker sleeps one second between two lines, so its lines tell how
+/// fast the kernel's timer runs. The harness looks every 50 ms and may be
+/// held up, so only the average is judged, and widely: a timer at half or
+/// at twice 100 Hz is outside.
+const TICK_GAP_MS: RangeInclusive<u128> = 600..=1600;
+
+/// `seen[i]` is when the harness first saw `SK:` line `i`. A run without a
+/// ticker has nothing to measure.
+fn tick_pace(apps: &[AppLine<'_>], seen: &[Duration]) -> Result<(), String> {
+    let places = ticks(apps)?;
+    if places.is_empty() {
+        return Ok(());
+    }
+    let timed: Vec<Duration> = places.iter().filter_map(|&at| seen.get(at).copied()).collect();
+    let [first, .., last] = timed[..] else {
+        return Err("fewer than two tick lines were timed".to_string());
+    };
+    let gap = (last - first).as_millis() / (timed.len() as u128 - 1);
+    if TICK_GAP_MS.contains(&gap) {
+        Ok(())
+    } else {
+        Err(format!(
+            "the ticker's lines came {gap} ms apart on average, expected {} to {}: the timer does not run at 100 Hz",
+            TICK_GAP_MS.start(),
+            TICK_GAP_MS.end()
+        ))
+    }
 }
 
 fn ticks_after(apps: &[AppLine<'_>], place: usize) -> Result<usize, String> {
@@ -595,6 +626,7 @@ fn scenario(
         trace: false,
         gdb: false,
     };
+    let mut seen = Vec::new();
     let followed = follow::follow(
         &vm,
         &mut |lines| {
@@ -607,6 +639,7 @@ fn scenario(
             }
         },
         "quit\n",
+        &mut seen,
     );
     // The harness ends the VM at any moment: the kernel may have been in
     // the middle of a line, and that line is not part of the run.
@@ -630,7 +663,8 @@ fn scenario(
             return Err(format!("no line `{digest}`"));
         }
         frames_add_up(lines)?;
-        check(lines, &strays)
+        check(lines, &strays)?;
+        tick_pace(&app_lines(lines), &seen)
     });
     report(o, name, round, &outcome, &kept, &verdict);
     verdict
@@ -795,6 +829,60 @@ mod tests {
     #[test]
     fn a_good_run_passes() {
         assert_eq!(m2(&good_m2()), Ok(()));
+    }
+
+    /// Lines of a ticker with a kernel line between each two, and the
+    /// time, in milliseconds, at which each tick line was seen.
+    fn timed_ticks(at_ms: &[u64]) -> (Vec<String>, Vec<Duration>) {
+        let mut lines = Vec::new();
+        let mut seen = Vec::new();
+        for (n, &ms) in at_ms.iter().enumerate() {
+            lines.push("SK:KERNEL:M2_RUNNING".to_string());
+            lines.push(out(1, "ticker", &format!("tick {}", n + 1)));
+            seen.extend([Duration::from_millis(ms); 2]);
+        }
+        (lines, seen)
+    }
+
+    fn pace(at_ms: &[u64]) -> Result<(), String> {
+        let (lines, seen) = timed_ticks(at_ms);
+        tick_pace(&app_lines(&lines), &seen)
+    }
+
+    #[test]
+    fn ticks_a_second_apart_keep_the_pace() {
+        assert_eq!(pace(&[1200, 2200, 3250, 4200]), Ok(()));
+        // The limits themselves.
+        assert_eq!(pace(&[0, 600]), Ok(()));
+        assert_eq!(pace(&[0, 1600]), Ok(()));
+    }
+
+    #[test]
+    fn a_timer_at_half_or_twice_the_rate_is_seen() {
+        assert!(pace(&[1000, 3000, 5000]).unwrap_err().contains("2000 ms apart"));
+        assert!(pace(&[1000, 1500, 2000]).unwrap_err().contains("500 ms apart"));
+        assert!(pace(&[0, 599]).is_err());
+        assert!(pace(&[0, 1601]).is_err());
+    }
+
+    #[test]
+    fn one_late_look_does_not_change_the_pace() {
+        // The harness was held up for a second: two lines were seen together.
+        assert_eq!(pace(&[1000, 2000, 4000, 4000, 5000]), Ok(()));
+    }
+
+    #[test]
+    fn fewer_than_two_timed_ticks_are_no_measurement() {
+        assert!(pace(&[1000]).unwrap_err().contains("fewer than two"));
+        // A tick line the harness never saw while the VM ran has no time.
+        let (lines, seen) = timed_ticks(&[1000, 2000]);
+        assert!(tick_pace(&app_lines(&lines), &seen[..3]).unwrap_err().contains("fewer than two"));
+        assert_eq!(tick_pace(&app_lines(&lines), &seen), Ok(()));
+    }
+
+    #[test]
+    fn a_run_without_a_ticker_has_no_pace_to_keep() {
+        assert_eq!(tick_pace(&app_lines(&[out(1, "hello", "hello from ring 3 abi=2")]), &[Duration::ZERO]), Ok(()));
     }
 
     #[test]

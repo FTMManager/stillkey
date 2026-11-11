@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::qemu::{self, Vm};
 use crate::tests::sk_lines;
@@ -29,17 +29,33 @@ pub fn whole_lines(raw: &[u8]) -> Vec<String> {
     sk_lines(whole(raw)).0
 }
 
+/// Gives every line that has no time yet the time `now`: when the harness
+/// first saw the line whole, counted from the start of the VM.
+pub fn note_arrivals(seen: &mut Vec<Duration>, lines: usize, now: Duration) {
+    if lines > seen.len() {
+        seen.resize(lines, now);
+    }
+}
+
 /// Starts the VM and calls `step` with the `SK:` lines every 50 ms until it
-/// says `Done` or `Failed`; then sends `at_end` to the monitor. Returns
+/// says `Done` or `Failed`; then sends `at_end` to the monitor. `seen`
+/// gets the time at which each of those lines was first there. Returns
 /// QEMU's exit status: 0 if the harness ended the VM, the guest's own
 /// status if the guest ended first, 124 or 137 if the time limit did.
 /// `Failed` comes back as the error, after the VM has ended.
-pub fn follow(vm: &Vm, step: &mut dyn FnMut(&[String]) -> Verdict, at_end: &str) -> Result<i32, String> {
+pub fn follow(
+    vm: &Vm,
+    step: &mut dyn FnMut(&[String]) -> Verdict,
+    at_end: &str,
+    seen: &mut Vec<Duration>,
+) -> Result<i32, String> {
     let mut child = qemu::spawn_monitored(vm)?;
+    let start = Instant::now();
     let serial_log = vm.dir.join("serial.log");
     let mut failure = None;
     loop {
         let lines = whole_lines(&fs::read(&serial_log).unwrap_or_default());
+        note_arrivals(seen, lines.len(), start.elapsed());
         let verdict = step(&lines);
         if !matches!(verdict, Verdict::Waiting) {
             if let Verdict::Failed(why) = verdict {
@@ -78,6 +94,15 @@ mod tests {
         assert_eq!(whole(b"SK:A one\r\nSK:APP:OUT pid=3 name=inspector | table cha"), b"SK:A one\r\n");
         assert_eq!(whole(b"SK:A one\r\n"), b"SK:A one\r\n");
         assert_eq!(whole(b"SK:A on"), b"");
+    }
+
+    #[test]
+    fn each_line_keeps_the_time_it_was_first_seen() {
+        let mut seen = Vec::new();
+        note_arrivals(&mut seen, 2, Duration::from_millis(50));
+        note_arrivals(&mut seen, 2, Duration::from_millis(100));
+        note_arrivals(&mut seen, 3, Duration::from_millis(150));
+        assert_eq!(seen, [50, 50, 150].map(Duration::from_millis));
     }
 
     #[test]
