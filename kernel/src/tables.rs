@@ -178,6 +178,12 @@ pub fn smap_enabled() {
 /// Called by `isr_common` with the frame it built. Returning restores the
 /// frame, changed or not, and resumes what was interrupted.
 extern "C" fn isr_dispatch(frame: &mut TrapFrame) {
+    // A program can enter with `RFLAGS.AC` set. `isr_common` clears it;
+    // if it did not, `CR4.SMAP` would not stop the kernel from following
+    // a user address.
+    if SMAP_ON.load(Ordering::Relaxed) != 0 && arch::read_rflags() & arch::RFLAGS_AC != 0 {
+        panic!("RFLAGS.AC is set in the kernel");
+    }
     match frame.vector as u8 {
         x86::VECTOR_TIMER => {
             timer::on_tick();

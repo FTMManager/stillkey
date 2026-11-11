@@ -104,6 +104,18 @@ pub fn invlpg(virt: u64) {
     unsafe { asm!("invlpg [{}]", in(reg) virt, options(nostack, preserves_flags)) };
 }
 
+/// `RFLAGS.AC`: with `CR4.SMAP` set, ring 0 may touch user pages only
+/// while this flag is set.
+pub const RFLAGS_AC: u64 = 1 << 18;
+
+pub fn read_rflags() -> u64 {
+    let value: u64;
+    // SAFETY: the two instructions use eight bytes of this stack and
+    // leave the stack pointer and the flags as they were.
+    unsafe { asm!("pushfq", "pop {}", out(reg) value, options(nomem, preserves_flags)) }
+    value
+}
+
 pub fn read_cr2() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading the register changes nothing.
