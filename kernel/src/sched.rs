@@ -231,7 +231,7 @@ pub fn idle() -> ! {
         // interrupt is lost between it and `hlt`. The timer handler may
         // switch away on this stack; when the idle thread is chosen again
         // it returns to the `cli`.
-        unsafe { asm!("sti", "hlt", "cli", options(nomem, nostack)) };
+        unsafe { asm!("sti", "hlt", "cli", options(nostack)) };
     }
 }
 

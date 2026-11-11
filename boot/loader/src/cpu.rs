@@ -42,14 +42,14 @@ pub fn has_nx() -> bool {
 pub fn read_cr0() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading a control register changes nothing.
-    unsafe { asm!("mov {}, cr0", out(reg) value, options(nomem, nostack, preserves_flags)) };
+    unsafe { asm!("mov {}, cr0", out(reg) value, options(nomem, nostack)) };
     value
 }
 
 pub fn read_cr4() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading a control register changes nothing.
-    unsafe { asm!("mov {}, cr4", out(reg) value, options(nomem, nostack, preserves_flags)) };
+    unsafe { asm!("mov {}, cr4", out(reg) value, options(nomem, nostack)) };
     value
 }
 
@@ -86,14 +86,14 @@ pub fn enable_write_protect() {
     let cr0 = read_cr0() | CR0_WP;
     // SAFETY: ring 0, boot services exited. The loader writes only to memory
     // it allocated, which firmware's tables map writable.
-    unsafe { asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack, preserves_flags)) };
+    unsafe { asm!("mov cr0, {}", in(reg) cr0, options(nomem, nostack)) };
 }
 
 fn write_cr4(value: u64) {
     // SAFETY: ring 0, boot services exited, interrupts off. The two callers
     // change only bit 7 (PGE) of the value they read; firmware's tables are
     // valid with or without global pages.
-    unsafe { asm!("mov cr4, {}", in(reg) value, options(nomem, nostack, preserves_flags)) };
+    unsafe { asm!("mov cr4, {}", in(reg) value, options(nomem, nostack)) };
 }
 
 /// Clears `CR4.PGE` if it is set and leaves every other bit as it was.

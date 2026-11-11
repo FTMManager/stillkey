@@ -15,7 +15,7 @@ pub fn read_cr4() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading a control register changes nothing.
     unsafe {
-        asm!("mov {}, cr4", out(reg) value, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, cr4", out(reg) value, options(nomem, nostack));
     }
     value
 }
@@ -24,7 +24,7 @@ fn read_cr3() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading a control register changes nothing.
     unsafe {
-        asm!("mov {}, cr3", out(reg) value, options(nomem, nostack, preserves_flags));
+        asm!("mov {}, cr3", out(reg) value, options(nomem, nostack));
     }
     value
 }
@@ -58,6 +58,6 @@ pub fn drop_lower_half(direct_map_bytes: u64, expected_root: u64) {
     // translation that is not global, and the handoff contract guarantees
     // there are no global ones (CR4.PGE is clear and no entry sets the bit).
     unsafe {
-        asm!("mov cr3, {}", in(reg) cr3, options(nostack, preserves_flags));
+        asm!("mov cr3, {}", in(reg) cr3, options(nostack));
     }
 }

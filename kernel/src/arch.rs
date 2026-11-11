@@ -79,7 +79,7 @@ macro_rules! control_register {
         pub fn $read() -> u64 {
             let value: u64;
             // SAFETY: ring 0; reading a control register changes nothing.
-            unsafe { asm!(concat!("mov {}, ", $name), out(reg) value, options(nomem, nostack, preserves_flags)) }
+            unsafe { asm!(concat!("mov {}, ", $name), out(reg) value, options(nomem, nostack)) }
             value
         }
 
@@ -87,7 +87,7 @@ macro_rules! control_register {
         /// The value must be one the kernel can run with.
         pub unsafe fn $write(value: u64) {
             // SAFETY: the caller's contract.
-            unsafe { asm!(concat!("mov ", $name, ", {}"), in(reg) value, options(nostack, preserves_flags)) }
+            unsafe { asm!(concat!("mov ", $name, ", {}"), in(reg) value, options(nostack)) }
         }
     };
 }
@@ -119,7 +119,7 @@ pub fn read_rflags() -> u64 {
 pub fn read_cr2() -> u64 {
     let value: u64;
     // SAFETY: ring 0; reading the register changes nothing.
-    unsafe { asm!("mov {}, cr2", out(reg) value, options(nomem, nostack, preserves_flags)) }
+    unsafe { asm!("mov {}, cr2", out(reg) value, options(nomem, nostack)) }
     value
 }
 
