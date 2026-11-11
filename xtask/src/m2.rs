@@ -444,7 +444,7 @@ fn check_probe(probe: &str, pid: u64, printed: &[&str], end: &str, lines: &[Stri
                 "badptr case=ac status=INVALID_ARGS",
             ],
         )?,
-        "handles" => expect_lines(printed, &["handles calls=16384 bad_handle=16384 other=0"])?,
+        "handles" => expect_lines(printed, &["handles calls=24576 bad_handle=24576 other=0"])?,
         "forge" => {
             let flood = printed.iter().filter(|text| text.len() == 256 && text.bytes().all(|b| b == b'x')).count();
             if printed.first() != Some(&FORGED)
@@ -976,7 +976,7 @@ mod tests {
             pout(12, "badptr", "badptr case=long status=INVALID_ARGS"),
             pout(12, "badptr", "badptr case=ac status=INVALID_ARGS"),
             exit(12, "badptr"),
-            pout(13, "handles", "handles calls=16384 bad_handle=16384 other=0"),
+            pout(13, "handles", "handles calls=24576 bad_handle=24576 other=0"),
             exit(13, "handles"),
             pout(14, "forge", FORGED),
         ];
@@ -1111,7 +1111,7 @@ mod tests {
 
     #[test]
     fn every_handle_value_must_be_refused() {
-        assert!(prober_with("bad_handle=16384 other=0", "bad_handle=16383 other=1").contains("probe `handles`"));
+        assert!(prober_with("bad_handle=24576 other=0", "bad_handle=24575 other=1").contains("probe `handles`"));
     }
 
     #[test]

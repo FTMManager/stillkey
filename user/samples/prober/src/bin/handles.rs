@@ -1,5 +1,6 @@
 //! Probe `handles` (docs/10 section 9): a program without handles tries
-//! 8192 handle values, twice each. Every call must be refused with
+//! 12288 handle values, twice each: 0 to 8191, which holds the value
+//! `0x1000` that the scenario's `ticker` holds, and 4096 others. Every call must be refused with
 //! `BAD_HANDLE`.
 
 #![no_std]
@@ -27,7 +28,7 @@ fn main() -> i32 {
             }
         }
     };
-    for handle in 0..4096 {
+    for handle in 0..8192 {
         probe(handle);
     }
     // xorshift32.
@@ -38,6 +39,6 @@ fn main() -> i32 {
         x ^= x << 5;
         probe(x);
     }
-    out!("handles calls=16384 bad_handle={} other={}", bad, other);
+    out!("handles calls=24576 bad_handle={} other={}", bad, other);
     0
 }

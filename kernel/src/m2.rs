@@ -28,7 +28,8 @@ const SCENARIOS: &[Scenario] = &[
     (
         b"m2-prober",
         &[
-            ("bin/ticker", false),
+            // It holds the value `0x1000` while `prober-handles` guesses.
+            ("bin/ticker", true),
             ("bin/prober-kread", false),
             ("bin/prober-hlt", false),
             ("bin/prober-in", false),
