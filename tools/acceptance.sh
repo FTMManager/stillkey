@@ -9,6 +9,10 @@ repeat="${1:-20}"
 out=build/acceptance
 mkdir -p "$out"
 failed=0
+expected=""
+# What was tested: the commit, and how many files differ from it (the
+# records, which this run may be writing, are not counted).
+echo "COMMIT $(git rev-parse HEAD) changed_files=$(git status --porcelain -- . ':!docs/records' | wc -l)"
 row() {
     local name="$1"
     shift
@@ -22,6 +26,12 @@ row() {
     echo "ROW $name status=$status results=$results fails=$fails seconds=$((SECONDS - start)) log=$log"
     grep -E '^SUMMARY |FAILED|^xtask:|^error' "$log" | cut -c1-300
     [ "$status" -eq 0 ] || failed=1
+    # Every row runs the same tests: a row with another count ran too few.
+    expected="${expected:-$results}"
+    if [ "$results" -ne "$expected" ]; then
+        echo "ROW $name has $results results, the first row has $expected"
+        failed=1
+    fi
 }
 row dev-kvm --accel kvm
 row dev-tcg --accel tcg
