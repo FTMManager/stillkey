@@ -1,0 +1,82 @@
+KILLED lib/abi/src/lib.rs:81 `>=` | if value >= 0 {
+KILLED lib/abi/src/lib.rs:85 `<` | while i < Status::ALL.len() {
+KILLED lib/abi/src/lib.rs:86 `==` | if value == -(Status::ALL[i] as i64) {
+KILLED lib/abi/src/diag.rs:81 `==` | let len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+KILLED lib/sk-bootfs/src/lib.rs:109 `==` | if len == 0 || !head.iter().all(|&b| allowed(b)) || tail.iter().any(|&b| b != 0) {
+KILLED lib/sk-bootfs/src/lib.rs:147 `!=` | || raw[RESERVED..].iter().any(|&b| b != 0)
+KILLED lib/sk-bootfs/src/lib.rs:171 `!=` | if field(8)? != VERSION || field(12)? != HEADER_SIZE as u32 || field(20)? != ENTRY_SIZE as u32 {
+SURVIVED lib/sk-bootfs/src/lib.rs:184 `>` | || count > MAX_ENTRIES
+SURVIVED lib/sk-bootfs/src/lib.rs:187 `>` | || table_end > data_offset
+KILLED lib/sk-bootfs/src/lib.rs:200 `+ 1` | for (j, b) in parsed.entries().enumerate().skip(i + 1) {
+KILLED lib/sk-bootfs/src/lib.rs:204 `==` | a.kind == KIND_PROGRAM && b.kind == KIND_PROGRAM && a.name == b.name;
+SURVIVED lib/sk-bootfs/src/build.rs:27 `>=` | if text.len() >= field.len() {
+KILLED lib/sk-kcore/src/paging.rs:121 `!=` | if virt % PAGE != 0 || phys & !ADDRESS != 0 {
+KILLED lib/sk-kcore/src/paging.rs:161 `==` | if entry & PRESENT == 0 || entry & HUGE != 0 {
+KILLED lib/sk-kcore/src/paging.rs:188 `!=` | user &= entry & USER != 0;
+KILLED lib/sk-kcore/src/paging.rs:195 `- 1` | phys: base | virt & (page_size - 1),
+KILLED lib/sk-kcore/src/paging.rs:239 `!=` | if *slot & PRESENT != 0 {
+KILLED lib/sk-kcore/src/paging.rs:285 `!=` | no_execute: entry & NO_EXECUTE != 0,
+KILLED lib/sk-kcore/src/paging.rs:341 `!=` | writable: above.writable && entry & WRITABLE != 0,
+KILLED lib/sk-kcore/src/paging.rs:357 `- 1` | walk_table(mem, entry & ADDRESS, level - 1, virt, here, each);
+KILLED lib/sk-kcore/src/sched.rs:44 `==` | (0..self.len).any(|i| self.ready[(self.head + i) % N] == tid)
+KILLED lib/sk-kcore/src/sched.rs:48 `==` | self.sleepers[..self.sleeping].iter().any(|s| s.tid == tid)
+KILLED lib/sk-kcore/src/sched.rs:69 `==` | if self.len == 0 {
+KILLED lib/sk-kcore/src/sched.rs:73 `+ 1` | self.head = (self.head + 1) % N;
+KILLED lib/sk-kcore/src/sched.rs:97 `<=` | .filter(|(_, s)| s.until <= now)
+KILLED lib/sk-kcore/src/sched.rs:104 `+ 1` | self.sleepers.copy_within(index + 1..self.sleeping, index);
+KILLED lib/sk-kcore/src/heap.rs:37 `>` | if layout.align() > PAGE {
+KILLED lib/sk-kcore/src/heap.rs:41 `<=` | if size <= MAX_BLOCK { Some(size.next_power_of_two()) } else { size.checked_next_multiple_of(PAGE) }
+KILLED lib/sk-kcore/src/heap.rs:71 `==` | debug_assert!(start as usize % PAGE == 0 && len % PAGE == 0 && len != 0);
+KILLED lib/sk-kcore/src/heap.rs:82 `>` | if size > MAX_BLOCK {
+SURVIVED lib/sk-kcore/src/heap.rs:117 `>` | if size > MAX_BLOCK {
+KILLED lib/sk-kcore/src/heap.rs:146 `>=` | if (*run).pages >= pages {
+SURVIVED lib/sk-kcore/src/handles.rs:35 `<` | Table { slots: [Slot { held: None, generation: 0 }; N], cap: if cap < N { cap } else { N }, len: 0 }
+KILLED lib/sk-kcore/src/handles.rs:43 `==` | self.len == 0
+KILLED lib/sk-kcore/src/handles.rs:48 `>=` | if self.len >= self.cap {
+KILLED lib/sk-kcore/src/handles.rs:60 `- 1` | let index = (rest & ((1 << SLOT_BITS) - 1)) as usize;
+KILLED lib/sk-kcore/src/crash.rs:50 `+ 1` | self.next = (self.next + 1) % CRASH_RING;
+KILLED lib/sk-kcore/src/crash.rs:59 `>=` | .filter(move |record| record.seq >= seq)
+KILLED lib/sk-kcore/src/crash.rs:64 `==` | self.from(seq).next().filter(|record| record.seq == seq)
+KILLED lib/sk-kcore/src/account.rs:55 `>` | if total > self.limit {
+KILLED lib/sk-kcore/src/usercopy.rs:40 `<` | if addr < USER_FIRST || end > USER_END {
+KILLED lib/sk-kcore/src/usercopy.rs:62 `- 1` | let mut page = addr & !(PAGE - 1);
+KILLED lib/sk-kcore/src/usercopy.rs:74 `==` | if page == last_page {
+KILLED lib/sk-kcore/src/usercopy.rs:118 `false` | check_pages(space, mem, addr, dst.len() as u64, false, is_memory)?;
+KILLED lib/sk-kcore/src/logfmt.rs:48 `==` | if passed == 0 {
+KILLED lib/sk-kcore/src/logfmt.rs:62 `true` | true
+KILLED lib/sk-kcore/src/console.rs:39 `!=` | (cols != 0 && rows != 0 && fb.stride_pixels >= fb.width).then_some(Console { cols, rows, used: 0 })
+KILLED lib/sk-kcore/src/console.rs:57 `<` | if (buf.len() as u64) < span {
+KILLED lib/sk-kcore/src/console.rs:77 `<` | if self.used < self.rows {
+KILLED lib/sk-kcore/src/console.rs:79 `- 1` | return self.used - 1;
+KILLED lib/sk-kcore/src/console.rs:83 `- 1` | let last = TOP + (self.rows - 1) * CELL_HEIGHT;
+KILLED lib/sk-kcore/src/console.rs:90 `- 1` | self.rows - 1
+KILLED xtask/src/m2.rs:111 `==` | .find(|p| p.name == name)
+KILLED xtask/src/m2.rs:182 `!=` | if line.text != want {
+KILLED xtask/src/m2.rs:185 `!=` | if *pid.get_or_insert(line.pid) != line.pid {
+SURVIVED xtask/src/m2.rs:194 `>` | Ok(ticks(apps)?.iter().filter(|&&at| at > place).count())
+KILLED xtask/src/m2.rs:222 `!=` | if said.text != want {
+KILLED xtask/src/m2.rs:254 `!=` | if after.crashes != [record.clone()] {
+KILLED xtask/src/m2.rs:268 `!=` | if let Some(odd) = tables.iter().find(|t| t.accounted() != accounted) {
+KILLED xtask/src/m2.rs:279 `<` | if more < 5 {
+KILLED xtask/src/m2.rs:294 `<` | if more < 5 {
+SURVIVED xtask/src/m2.rs:301 `>` | let tables: Vec<Table> = tables(&apps)?.into_iter().filter(|t| t.first > start).collect();
+KILLED xtask/src/m2.rs:312 `<` | if span < 1000 {
+KILLED xtask/src/m2.rs:320 `>=` | if 2 * spinner < passed || 10 * ticker >= passed {
+KILLED xtask/src/m2.rs:374 `||` | .position(|l| l.starts_with(&crash) || l.starts_with(&exit))
+KILLED xtask/src/m2.rs:432 `||` | || !(1..=15).contains(&obtained)
+KILLED xtask/src/m2.rs:450 `!=` | if printed.first() != Some(&FORGED)
+KILLED xtask/src/m2.rs:452 `!=` | || printed.len() != flood + 2
+KILLED xtask/src/font.rs:11 `+ 1` | const COUNT: usize = (LAST - FIRST + 1) as usize;
+KILLED xtask/src/font.rs:36 `true` | if let (true, Some(c), Some(found)) = (wanted, code, rows.take()) {
+KILLED xtask/src/font.rs:43 `!=` | if line.len() != 2 {
+KILLED xtask/src/screen.rs:66 `+ 1` | let rgb = &file[at + 1..];
+KILLED xtask/src/screen.rs:68 `==` | if width == 0 || height == 0 || bytes != Some(rgb.len()) {
+KILLED xtask/src/screen.rs:85 `<` | let want = if y < BAND_ROWS { CYAN } else { VOID };
+KILLED xtask/src/screen.rs:86 `!=` | if pixel != want {
+KILLED xtask/src/screen.rs:114 `&&` | if !(fb.fill_rows(&mut buf, 0, band, colour(CYAN)) && fb.fill_rows(&mut buf, band, fb.height, colour(VOID))) {
+KILLED xtask/src/bootfs.rs:54 `false` | let mut corrupt_wx = false;
+KILLED xtask/src/bootfs.rs:61 `true` | corrupt_wx = true;
+SURVIVED xtask/src/bootfs.rs:140 `!=` | if kind != KIND_PROGRAM {
+SURVIVED xtask/src/bootfs.rs:149 `==` | } else if kind == KIND_PROGRAM {
+TOTAL KILLED=71 SURVIVED=9
+TREE clean

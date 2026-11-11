@@ -1,0 +1,4 @@
+﻿dev-kvm exit=0 pass_lines=208 fail_lines=0 seconds=462 | SUMMARY test=m1 profile=dev repeat=20 result=pass accel=kvm
+dev-tcg exit=0 pass_lines=208 fail_lines=0 seconds=480 | SUMMARY test=m1 profile=dev repeat=20 result=pass accel=tcg
+release-kvm exit=0 pass_lines=208 fail_lines=0 seconds=456 | SUMMARY test=m1 profile=release repeat=20 result=pass accel=kvm
+release-tcg exit=0 pass_lines=208 fail_lines=0 seconds=478 | SUMMARY test=m1 profile=release repeat=20 result=pass accel=tcg

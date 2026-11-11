@@ -1,0 +1,42 @@
+BASELINE xtask pass
+KILLED xtask/src/tests.rs:415 `<` | while i < raw.len() {
+KILLED xtask/src/tests.rs:421 `<` | while i < raw.len() && !(0x40..=0x7E).contains(&raw[i]) {
+KILLED xtask/src/tests.rs:440 `&&` | } else if lines.is_empty() && !line.trim().is_empty() {
+KILLED xtask/src/tests.rs:466 `+ 1` | Some(offset) => next += offset + 1,
+KILLED xtask/src/tests.rs:710 `!=` | if addr != announced {
+KILLED xtask/src/tests.rs:716 `!=` | if error & mask != want {
+KILLED xtask/src/tests.rs:738 `!=` | if free + bitmap != usable {
+TOTAL KILLED=7
+TREE clean
+BASELINE xtask pass
+SURVIVED xtask/src/follow.rs:35 `>` | if lines > seen.len() {
+TOTAL SURVIVED=1
+TREE clean
+BASELINE xtask pass
+KILLED xtask/src/m2.rs:113 `==` | .find(|p| p.name == name)
+KILLED xtask/src/m2.rs:184 `!=` | if line.text != want {
+KILLED xtask/src/m2.rs:187 `!=` | if *pid.get_or_insert(line.pid) != line.pid {
+KILLED xtask/src/m2.rs:212 `- 1` | let gap = (last - first).as_millis() / (timed.len() as u128 - 1);
+SURVIVED xtask/src/m2.rs:225 `>` | Ok(ticks(apps)?.iter().filter(|&&at| at > place).count())
+KILLED xtask/src/m2.rs:253 `!=` | if said.text != want {
+KILLED xtask/src/m2.rs:285 `!=` | if after.crashes != [record.clone()] {
+KILLED xtask/src/m2.rs:299 `!=` | if let Some(odd) = tables.iter().find(|t| t.accounted() != accounted) {
+KILLED xtask/src/m2.rs:310 `<` | if more < 5 {
+KILLED xtask/src/m2.rs:325 `<` | if more < 5 {
+SURVIVED xtask/src/m2.rs:332 `>` | let tables: Vec<Table> = tables(&apps)?.into_iter().filter(|t| t.first > start).collect();
+KILLED xtask/src/m2.rs:343 `<` | if span < 1000 {
+KILLED xtask/src/m2.rs:351 `>=` | if 2 * spinner < passed || 10 * ticker >= passed {
+KILLED xtask/src/m2.rs:405 `||` | .position(|l| l.starts_with(&crash) || l.starts_with(&exit))
+KILLED xtask/src/m2.rs:463 `||` | || !(1..=15).contains(&obtained)
+KILLED xtask/src/m2.rs:481 `!=` | if printed.first() != Some(&FORGED)
+TOTAL KILLED=14 SURVIVED=2
+TREE clean
+BASELINE sk-kcore pass
+KILLED lib/sk-kcore/src/console.rs:41 `!=` | (cols != 0 && rows != 0 && fb.stride_pixels >= fb.width).then_some(Console { cols, rows, used: 0 })
+KILLED lib/sk-kcore/src/console.rs:60 `<` | if (buf.len() as u64) < span {
+KILLED(timeout) lib/sk-kcore/src/console.rs:83 `>` | if self.cols > CONTINUATION_INDENT { CONTINUATION_INDENT } else { 0 }
+KILLED lib/sk-kcore/src/console.rs:89 `<` | if self.used < self.rows {
+KILLED lib/sk-kcore/src/console.rs:91 `- 1` | return self.used - 1;
+KILLED lib/sk-kcore/src/console.rs:95 `- 1` | let last = TOP + (self.rows - 1) * CELL_HEIGHT;
+TOTAL KILLED=5 KILLED(timeout)=1
+TREE clean

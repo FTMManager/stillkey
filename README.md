@@ -8,12 +8,15 @@ The aim is a private workspace: an app starts with access to nothing, gets acces
 
 ## Status
 
-| Branch | What it does |
+| Milestone | State |
 |---|---|
-| `main` | Milestone 1, boot. The loader checks and loads the kernel and hands over; the kernel checks what it was given and reports on the serial port and the screen. |
-| `milestone-2` | Milestone 2, run and observe. Programs run in ring 3 in separate address spaces under a pre-emptive scheduler. A program that faults is ended and the others keep running. |
+| 1, boot | Done. The loader checks and loads the kernel and hands over; the kernel checks what it was given and reports on the serial port and the screen. |
+| 2, run and observe | Done. Programs run in ring 3 in separate address spaces under a pre-emptive scheduler. A program that faults is ended and the others keep running. |
+| 3, grant and revoke | Specified, not started. File access through grants that can be revoked. |
+| 4, desktop demo | Planned. A desktop with a permission prompt that apps cannot forge, then an assistant that works only in what it has been handed. |
+| 5, hardware and dual boot | Planned. |
 
-Next is file access through grants that can be revoked.
+`main` holds the milestones that are done.
 
 ## Build and test
 
@@ -29,7 +32,7 @@ On Debian or Ubuntu: `sudo apt-get install build-essential qemu-system-x86 ovmf 
 cargo xtask setup-check   # says what is missing
 cargo xtask build         # the loader, the kernel and a disk image
 cargo xtask run           # boot it in QEMU, serial port on the terminal
-cargo xtask test m1       # the Milestone 1 tests; on milestone-2 also `m2` and `all`
+cargo xtask test all      # every test; `m1` or `m2` runs one milestone's
 ```
 
 The tests boot the real image in QEMU and judge the serial log. They use KVM when `/dev/kvm` is usable, and software emulation otherwise.
@@ -41,10 +44,15 @@ The tests boot the real image in QEMU and judge the serial log. They use KVM whe
 | `boot/` | The UEFI loader and the block of data it hands to the kernel |
 | `kernel/` | The kernel |
 | `lib/` | `no_std` crates shared by the loader, the kernel and the tests |
-| `user/` | Programs that run on Stillkey (branch `milestone-2`) |
+| `user/` | Programs that run on Stillkey |
 | `xtask/` | The build and test tool |
 | `tests/` | The serial output each test expects |
+| `docs/` | The design and the build plan, and the record of each milestone's tests |
+
+## Design documents
+
+[docs/](docs/README.md) has the design: what the system is for, how it boots, the kernel's interfaces, the permission model, the interface, and the plan milestone by milestone. Each milestone that is built has a specification there and the records of its test runs.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The bundled font, Spleen, has its own BSD 2-Clause license in `assets/spleen-LICENSE` (branch `milestone-2`).
+MIT, see [LICENSE](LICENSE). The bundled font, Spleen, has its own BSD 2-Clause license in `assets/spleen-LICENSE`.

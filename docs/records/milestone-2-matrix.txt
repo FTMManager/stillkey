@@ -1,0 +1,9 @@
+ROW dev-kvm status=0 results=357 fails=0 seconds=1184 log=build/acceptance/dev-kvm.log
+SUMMARY test=all profile=dev repeat=20 result=pass accel=kvm
+ROW dev-tcg status=0 results=357 fails=0 seconds=1261 log=build/acceptance/dev-tcg.log
+SUMMARY test=all profile=dev repeat=20 result=pass accel=tcg
+ROW release-kvm status=0 results=357 fails=0 seconds=1175 log=build/acceptance/release-kvm.log
+SUMMARY test=all profile=release repeat=20 result=pass accel=kvm
+ROW release-tcg status=0 results=357 fails=0 seconds=1263 log=build/acceptance/release-tcg.log
+SUMMARY test=all profile=release repeat=20 result=pass accel=tcg
+MATRIX repeat=20 result=pass
