@@ -356,4 +356,17 @@ mod tests {
         }
         assert_eq!(heap.free_bytes(), start);
     }
+
+    #[test]
+    fn the_largest_small_block_goes_back_to_its_class() {
+        let arena = Arena::new(1);
+        let mut heap = arena.heap();
+        let half = layout(MAX_BLOCK, 8);
+        let (a, b) = (heap.alloc(half), heap.alloc(half));
+        assert!(!a.is_null() && !b.is_null() && a != b);
+        // SAFETY: `a` came from this heap with this layout and is not used
+        // before the heap hands it out again.
+        unsafe { heap.dealloc(a, half) };
+        assert_eq!(heap.alloc(half), a);
+    }
 }

@@ -190,4 +190,30 @@ mod tests {
         let twins = [source("bin/a", "same", b"a"), source("bin/b", "same", b"b")];
         assert!(pack(&twins).is_err());
     }
+
+    fn many(count: usize) -> Vec<Source> {
+        (0..count).map(|i| source(&format!("bin/p{i}"), &format!("p{i}"), b"data")).collect()
+    }
+
+    #[test]
+    fn the_table_may_be_full_and_no_fuller() {
+        let image = pack(&many(crate::MAX_ENTRIES)).unwrap();
+        assert_eq!(parse(&image).unwrap().entries().count(), crate::MAX_ENTRIES);
+        assert!(pack(&many(crate::MAX_ENTRIES + 1)).is_err());
+    }
+
+    #[test]
+    fn a_table_that_ends_at_a_page_end_is_accepted() {
+        // 64 + 21 * 192 = 4096: the data starts where the table ends.
+        assert_eq!(HEADER_SIZE + 21 * ENTRY_SIZE, PAGE as usize);
+        let image = pack(&many(21)).unwrap();
+        assert_eq!(parse(&image).unwrap().entries().count(), 21);
+    }
+
+    #[test]
+    fn a_name_must_leave_room_for_its_end() {
+        assert!(pack(&[source("bin/a", &"n".repeat(15), b"data")]).is_ok());
+        let error = pack(&[source("bin/a", &"n".repeat(16), b"data")]).unwrap_err();
+        assert!(error.contains("longer than 15 bytes"), "{error}");
+    }
 }
