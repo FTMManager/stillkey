@@ -503,7 +503,9 @@ fn mem_free(pid: u32, addr: u64, len: u64) -> u64 {
     let pages = len.div_ceil(PAGE);
     let process = process(pid);
     let space = process.space;
-    let inside = addr >= USER_HEAP_BASE && addr + pages * PAGE <= USER_HEAP_BASE + heap_span(process);
+    // `addr` is the program's: the end of the range may not be computable.
+    let inside = addr >= USER_HEAP_BASE
+        && addr.checked_add(pages * PAGE).is_some_and(|end| end <= USER_HEAP_BASE + heap_span(process));
     if !inside || (0..pages).any(|page| space.translate(&mut DirectMap, addr + page * PAGE).is_none()) {
         return INVALID_ARGS;
     }

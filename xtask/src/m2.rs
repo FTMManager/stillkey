@@ -482,6 +482,7 @@ fn check_probe(probe: &str, pid: u64, printed: &[&str], end: &str, lines: &[Stri
                     "edge case=alloc0 status=INVALID_ARGS",
                     "edge case=allocbig status=INVALID_ARGS",
                     "edge case=freebad status=INVALID_ARGS",
+                    "edge case=freewrap status=INVALID_ARGS",
                     "edge case=close0 status=BAD_HANDLE",
                 ],
             )?;
@@ -987,6 +988,7 @@ mod tests {
             pout(15, "edge", "edge case=alloc0 status=INVALID_ARGS"),
             pout(15, "edge", "edge case=allocbig status=INVALID_ARGS"),
             pout(15, "edge", "edge case=freebad status=INVALID_ARGS"),
+            pout(15, "edge", "edge case=freewrap status=INVALID_ARGS"),
             pout(15, "edge", "edge case=close0 status=BAD_HANDLE"),
             crash(15, "edge", 13, 0, 0x40_0200, 0x102),
             pout(16, "wtext", "wtext addr=0x400000"),

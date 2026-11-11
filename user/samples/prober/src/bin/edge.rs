@@ -27,6 +27,8 @@ fn main() -> i32 {
     out!("edge case=alloc0 status={}", alloc(0));
     out!("edge case=allocbig status={}", alloc(MIB + 1));
     out!("edge case=freebad status={}", mem_free(0x2_0000_0000u64 as *mut u8, 4096).name());
+    // The end of this range is past the top of the address space.
+    out!("edge case=freewrap status={}", mem_free(0xFFFF_FFFF_FFFF_F000u64 as *mut u8, 4096).name());
     out!("edge case=close0 status={}", handle_close(0).name());
     // SAFETY: the instruction is the probe: the gate of vector 0x20 is not
     // open to ring 3, and the kernel ends the program here.
