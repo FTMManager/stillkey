@@ -1,13 +1,16 @@
 """A sampled mutation pass: one small change to the code at a time, then the
 host tests of its crate. A change no test notices is printed as SURVIVED.
-Run inside WSL from the workspace root: python3 tools/mutate.py"""
+Before any change the host tests of each crate are run as they are: a crate
+whose tests do not pass unchanged would make every mutant look KILLED.
+Run inside WSL from the workspace root: python3 tools/mutate.py [part of a path]"""
 import os
 import re
 import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/"
-# file, crate, how many mutants, where the code under test ends
+# file, crate, how many mutants, where the code under test ends, and
+# optionally where it starts (the first line that contains the text)
 TARGETS = [
     ("lib/abi/src/lib.rs", "stillkey-abi", 4, None),
     ("lib/abi/src/diag.rs", "stillkey-abi", 4, None),
@@ -24,6 +27,8 @@ TARGETS = [
     ("lib/sk-kcore/src/console.rs", "sk-kcore", 6, "cfg(test)"),
     ("xtask/src/m2.rs", "xtask", 16, "fn scenario("),
     ("xtask/src/follow.rs", "xtask", 2, "/// Starts the VM"),
+    ("xtask/src/tests.rs", "xtask", 6, "/// The value of `key=`", "/// Removes terminal escape"),
+    ("xtask/src/tests.rs", "xtask", 5, "/// The mode in the kernel", "/// Whether a page fault in the kernel"),
     ("xtask/src/font.rs", "xtask", 5, "cfg(test)"),
     ("xtask/src/screen.rs", "xtask", 5, "cfg(test)"),
     ("xtask/src/bootfs.rs", "xtask", 4, "cfg(test)"),
@@ -72,14 +77,26 @@ def run(crate):
     return "KILLED"
 
 
+only = sys.argv[1] if len(sys.argv) > 1 else ""
+TARGETS = [target for target in TARGETS if only in target[0]]
+for crate in sorted({target[1] for target in TARGETS}):
+    verdict = run(crate)
+    print(f"BASELINE {crate} {'pass' if verdict == 'SURVIVED' else verdict}", flush=True)
+    if verdict != "SURVIVED":
+        sys.exit(1)
+
 totals = {}
-for path, crate, want, marker in TARGETS:
+for path, crate, want, marker, *start in TARGETS:
     original = open(ROOT + path, encoding="utf-8", newline="").read()
     lines = original.split("\n")
     end = len(lines)
     if marker:
         end = next(i for i, line in enumerate(lines) if marker in line)
-    found = candidates(lines, end)
+    first = next(i for i, line in enumerate(lines) if start[0] in line) if start else 0
+    found = [candidate for candidate in candidates(lines, end) if candidate[0] >= first]
+    if not found:
+        print(f"NONE {path}: no line the tool can change", flush=True)
+        continue
     step = max(1, len(found) // want)
     picked = found[step // 2::step][:want]
     try:

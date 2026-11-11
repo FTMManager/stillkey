@@ -449,6 +449,11 @@ pub fn sk_lines(raw: &[u8]) -> (Vec<String>, usize) {
 pub fn check_expect(lines: &[String], name: &str) -> Result<(), String> {
     let path = workspace_root().join("tests").join(format!("{name}.expect"));
     let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    expect_text(lines, &text)
+}
+
+/// `check_expect` on the text of an expect file.
+fn expect_text(lines: &[String], text: &str) -> Result<(), String> {
     let mut next = 0;
     for want in text.lines().filter(|l| !l.is_empty()) {
         if let Some(forbidden) = want.strip_prefix('!') {
@@ -693,22 +698,28 @@ fn kernel_fault_boot(o: &TestOpts, art: &Artifacts, round: u32, name: &str, self
         let banner = "SK:KERNEL:PANIC exception";
         let (error, addr, rip) =
             (hex_field(lines, banner, "error")?, hex_field(lines, banner, "addr")?, hex_field(lines, banner, "rip")?);
-        if addr != announced {
-            return Err(format!("the fault is at {addr:#x}, the self-test announced {announced:#x}"));
-        }
-        // Bit 0: the page is present. Bit 1: a write. Bit 2: from ring 3.
-        // Bit 4: an instruction fetch.
-        let (want, mask) = if selftest == "kwrite_text" { (0b00011, 0b00111) } else { (0b10001, 0b10101) };
-        if error & mask != want {
-            return Err(format!("error code {error:#x} is not that of a refused {selftest}"));
-        }
-        if selftest == "kexec_data" && rip != announced {
-            return Err(format!("the fetch faulted at rip {rip:#x}, not at {announced:#x}"));
-        }
-        Ok(())
+        refused_access(selftest, error, addr, rip, announced)
     })();
     report(o, name, round, &outcome, &kept, &verdict);
     verdict
+}
+
+/// Whether a page fault in the kernel is the processor refusing what the
+/// self-test `kwrite_text` or `kexec_data` tried at the address it announced.
+fn refused_access(selftest: &str, error: u64, addr: u64, rip: u64, announced: u64) -> Result<(), String> {
+    if addr != announced {
+        return Err(format!("the fault is at {addr:#x}, the self-test announced {announced:#x}"));
+    }
+    // Bit 0: the page is present. Bit 1: a write. Bit 2: from ring 3.
+    // Bit 4: an instruction fetch.
+    let (want, mask) = if selftest == "kwrite_text" { (0b00011, 0b00111) } else { (0b10001, 0b10101) };
+    if error & mask != want {
+        return Err(format!("error code {error:#x} is not that of a refused {selftest}"));
+    }
+    if selftest == "kexec_data" && rip != announced {
+        return Err(format!("the fetch faulted at rip {rip:#x}, not at {announced:#x}"));
+    }
+    Ok(())
 }
 
 fn kwrite_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
@@ -1106,5 +1117,105 @@ mod bootfs_tests {
         let at = image.windows(4).rposition(|window| window == b"text").unwrap();
         image[at] ^= 1;
         assert!(check_bootfs(&image, &[]).unwrap_err().contains("digest"));
+    }
+}
+
+#[cfg(test)]
+mod line_checks {
+    use super::{expect_text, frames_add_up, refused_access, sk_lines};
+
+    fn lines(text: &[&str]) -> Vec<String> {
+        text.iter().map(|line| line.to_string()).collect()
+    }
+
+    #[test]
+    fn only_sk_lines_are_kept_and_firmware_lines_before_them_counted() {
+        let raw = b"BdsDxe: loading\r\n\r\nBdsDxe: starting\r\nSK:LOADER:START\r\nnoise\r\n at SK:X\r\nSK:KERNEL:ENTRY\r\n";
+        assert_eq!(sk_lines(raw), (lines(&["SK:LOADER:START", "SK:KERNEL:ENTRY"]), 2));
+        assert_eq!(sk_lines(b""), (Vec::new(), 0));
+    }
+
+    #[test]
+    fn escape_sequences_are_removed_before_lines_are_told_apart() {
+        // A sequence without parameters, one with parameters, and one of two bytes.
+        let raw = b"\x1b[2J\x1b[01;01HSK:A one\x1b[0m\n\x1bcSK:B two\n";
+        assert_eq!(sk_lines(raw).0, lines(&["SK:A one", "SK:B two"]));
+    }
+
+    #[test]
+    fn an_escape_sequence_cut_at_the_end_is_dropped() {
+        assert_eq!(sk_lines(b"SK:A\n\x1b["), (lines(&["SK:A"]), 0));
+        assert_eq!(sk_lines(b"SK:A\n\x1b"), (lines(&["SK:A"]), 0));
+        assert_eq!(sk_lines(b"SK:A\n\x1b[12"), (lines(&["SK:A"]), 0));
+    }
+
+    #[test]
+    fn expected_prefixes_must_come_in_order() {
+        let log = lines(&["SK:A one", "SK:X", "SK:B two", "SK:C"]);
+        assert_eq!(expect_text(&log, "SK:A\n\nSK:B two\nSK:C\n"), Ok(()));
+        assert_eq!(
+            expect_text(&log, "SK:B\nSK:A\n"),
+            Err("no line starting with `SK:A` after line 3".to_string())
+        );
+        assert_eq!(expect_text(&log, "SK:D\n"), Err("no line starting with `SK:D` after line 0".to_string()));
+    }
+
+    #[test]
+    fn one_line_does_not_answer_for_two_expected_lines() {
+        assert!(expect_text(&lines(&["SK:A one"]), "SK:A\nSK:A\n").is_err());
+        assert_eq!(expect_text(&lines(&["SK:A one", "SK:A two"]), "SK:A\nSK:A\n"), Ok(()));
+    }
+
+    #[test]
+    fn an_expected_line_is_a_prefix_not_a_part() {
+        assert!(expect_text(&lines(&["SK:KERNEL:A SK:B"]), "SK:B\n").is_err());
+    }
+
+    #[test]
+    fn forbidden_text_may_be_nowhere_in_any_line() {
+        let log = lines(&["SK:A one", "SK:KERNEL:PANIC at x"]);
+        assert_eq!(
+            expect_text(&log, "SK:A\n!PANIC\n"),
+            Err("forbidden text `PANIC` in line: SK:KERNEL:PANIC at x".to_string())
+        );
+        // Also in a line before the place the expected lines have reached.
+        assert!(expect_text(&log, "SK:KERNEL:PANIC\n!one\n").is_err());
+        assert_eq!(expect_text(&log, "SK:A\n!STOPPED\n"), Ok(()));
+    }
+
+    #[test]
+    fn free_and_bitmap_pages_must_be_the_usable_pages() {
+        let log = |free: u64| {
+            lines(&[
+                "SK:KERNEL:MEM usable_after_reserve pages=1000",
+                &format!("SK:KERNEL:FRAMES total=1000 free={free} bitmap_pages=10"),
+                "SK:KERNEL:FRAMES released=4",
+            ])
+        };
+        assert_eq!(frames_add_up(&log(990)), Ok(()));
+        assert!(frames_add_up(&log(989)).unwrap_err().contains("989"));
+        assert!(frames_add_up(&log(991)).is_err());
+        assert!(frames_add_up(&lines(&["SK:KERNEL:MEM usable_after_reserve pages=1000"])).is_err());
+    }
+
+    const AT: u64 = 0xffff_ffff_8000_0000;
+
+    #[test]
+    fn a_refused_write_is_a_write_from_ring_0_to_a_page_that_is_there() {
+        assert_eq!(refused_access("kwrite_text", 0x3, AT, 0x1234, AT), Ok(()));
+        for error in [0x2, 0x1, 0x7, 0x0] {
+            assert!(refused_access("kwrite_text", error, AT, 0x1234, AT).is_err(), "error {error:#x}");
+        }
+        assert!(refused_access("kwrite_text", 0x3, AT + 8, 0x1234, AT).unwrap_err().contains("announced"));
+    }
+
+    #[test]
+    fn a_refused_call_is_a_fetch_from_ring_0_of_a_page_that_is_there() {
+        assert_eq!(refused_access("kexec_data", 0x11, AT, AT, AT), Ok(()));
+        for error in [0x10, 0x01, 0x15, 0x03] {
+            assert!(refused_access("kexec_data", error, AT, AT, AT).is_err(), "error {error:#x}");
+        }
+        assert!(refused_access("kexec_data", 0x11, AT, AT + 2, AT).unwrap_err().contains("rip"));
+        assert!(refused_access("kexec_data", 0x11, AT + 8, AT, AT).is_err());
     }
 }
