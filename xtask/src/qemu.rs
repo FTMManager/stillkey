@@ -176,14 +176,20 @@ pub fn spawn_monitored(vm: &Vm) -> Result<Child, String> {
 
 /// Starts the VM and sends `commands` to the monitor once `marker` is in
 /// the serial log.
+/// True once `marker` is in a complete line of the serial log. The bytes
+/// after the last line end are a line the guest is still writing: ending
+/// the VM there would cut it, and the test would read half a line.
+fn marker_seen(log: &[u8], marker: &[u8]) -> bool {
+    crate::follow::whole(log).windows(marker.len()).any(|window| window == marker)
+}
+
 fn after_marker(vm: &Vm, marker: &str, commands: &str) -> Result<i32, String> {
     let mut child = spawn_monitored(vm)?;
 
     let serial_log = vm.dir.join("serial.log");
     let marker = marker.as_bytes();
     loop {
-        let seen = fs::read(&serial_log)
-            .is_ok_and(|bytes| bytes.windows(marker.len()).any(|window| window == marker));
+        let seen = fs::read(&serial_log).is_ok_and(|bytes| marker_seen(&bytes, marker));
         if seen {
             // The monitor reads its commands from standard input.
             let mut monitor = child.stdin.take().ok_or("QEMU has no standard input")?;
@@ -198,4 +204,18 @@ fn after_marker(vm: &Vm, marker: &str, commands: &str) -> Result<i32, String> {
     }
     let status = child.wait().map_err(|e| e.to_string())?;
     Ok(status.code().unwrap_or(-1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::marker_seen;
+
+    #[test]
+    fn a_marker_counts_only_in_a_line_that_is_complete() {
+        // The guest is still writing the line: ending the VM now would cut it.
+        assert!(!marker_seen(b"SK:A one\r\nSK:KERNEL:TIMER_OK ticks=1", b"SK:KERNEL:TIMER_OK"));
+        assert!(marker_seen(b"SK:A one\r\nSK:KERNEL:TIMER_OK ticks=100\r\n", b"SK:KERNEL:TIMER_OK"));
+        assert!(marker_seen(b"SK:KERNEL:PANIC_END\r\nSK:B", b"SK:KERNEL:PANIC_END\r\n"));
+        assert!(!marker_seen(b"SK:A one\r\n", b"SK:KERNEL:TIMER_OK"));
+    }
 }

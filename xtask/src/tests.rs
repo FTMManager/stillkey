@@ -601,7 +601,7 @@ fn hello_boot(o: &TestOpts, art: &Artifacts, round: u32) -> Result<(), String> {
         "SK:KERNEL:TIMER_OK",
     )?;
     let raw = fs::read(dir.join("serial.log")).unwrap_or_default();
-    let (lines, firmware_lines) = sk_lines(&raw);
+    let (lines, firmware_lines) = sk_lines(crate::follow::whole(&raw));
     let kept = keep_evidence(&dir, name, art, &lines)?;
     let outcome = Outcome { status, lines, firmware_lines };
     let lines = &outcome.lines;
